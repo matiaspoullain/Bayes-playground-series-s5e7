@@ -37,10 +37,14 @@ impute_from_stats <- function(df, numeric_cols, binary_cols, stats = NULL) {
   }
 
   for (col in numeric_cols) {
-    dt[[col]][is.na(dt[[col]])] <- stats[[col]]$median
+    col_data <- as.numeric(dt[[col]])
+    col_data[is.na(col_data)] <- stats[[col]]$median
+    set(dt, j = col, value = col_data)
   }
   for (col in binary_cols) {
-    dt[[col]][is.na(dt[[col]])] <- stats[[col]]$mode
+    col_data <- as.numeric(dt[[col]])
+    col_data[is.na(col_data)] <- stats[[col]]$mode
+    set(dt, j = col, value = col_data)
   }
 
   list(data = dt[], stats = stats)
