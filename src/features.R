@@ -133,3 +133,61 @@ prepare_stage1_data <- function(df, stats = NULL) {
 
   list(data = std$data, stats = list(impute = imputed$stats, standardize = std$stats))
 }
+
+#' Prepare raw train/test data for the Stage 2 (joint missing-data) model
+#'
+#' Runs only the recode + rename steps of the Stage 1 pipeline
+#' (`recode_personality()`, then the same PascalCase -> snake_case rename
+#' `prepare_stage1_data()` uses) and stops there: no missingness
+#' indicators, no imputation, no standardization. `NA`s in the 7
+#' partially-missing predictor columns are left exactly as they appear in
+#' the raw data, because Stage 2's `mi()` sub-models (see
+#' `stage2_formula()` in `model_spec_stage2.R`) consume the raw,
+#' unstandardized, still-missing values directly and model the missingness
+#' themselves rather than having it point-imputed away beforehand.
+#'
+#' @param df Raw data.frame/data.table with PascalCase columns
+#'   (`Time_spent_Alone`, `Stage_fear`, ...), as read from `train.csv` or
+#'   `test.csv`. Must include a `Personality` column; `recode_personality()`
+#'   requires it and errors (`object 'Personality' not found`) if it is
+#'   absent. `test.csv` lacks `Personality` and therefore cannot be passed
+#'   to this function as-is; a caller must add a placeholder `Personality`
+#'   column first.
+#'
+#' @return A list with a single `data` element: the prepared data.table,
+#'   including `personality_introvert`, the 5 snake_case count-like
+#'   predictors (`time_spent_alone`, `social_event_attendance`,
+#'   `going_outside`, `friends_circle_size`, `post_frequency`), and the 2
+#'   binary predictors (`stage_fear_bin`, `drained_after_socializing_bin`),
+#'   with `NA`s intact wherever the raw data had them.
+prepare_stage2_data <- function(df) {
+  df <- recode_personality(df)
+
+  raw_to_snake <- c(
+    Time_spent_Alone = "time_spent_alone", Social_event_attendance = "social_event_attendance",
+    Going_outside = "going_outside", Friends_circle_size = "friends_circle_size",
+    Post_frequency = "post_frequency", Stage_fear = "stage_fear",
+    Drained_after_socializing = "drained_after_socializing"
+  )
+  dt <- as.data.table(df)
+  setnames(dt, old = names(raw_to_snake), new = unname(raw_to_snake))
+
+  list(data = dt[])
+}
+
+#' Read a competition raw CSV, treating blank fields as NA
+#'
+#' `fread()`'s default `na.strings = "NA"` only matches the literal text
+#' "NA" — a blank field in a character column (e.g. an unanswered
+#' `Stage_fear`/`Drained_after_socializing` question) is read back as `""`,
+#' not `NA`, unless `na.strings` explicitly includes `""`. This wrapper is
+#' the single place that decision gets made, so every script reading
+#' `train.csv`/`test.csv` sees genuine missingness as `NA` consistently.
+#'
+#' @param path Path to a competition CSV file (e.g. `"data/raw/train.csv"`).
+#'
+#' @return A data.table, as returned by `fread()`, with blank fields and
+#'   the literal text "NA" both read as `NA`.
+read_competition_csv <- function(path) {
+  fread(path, na.strings = c("NA", ""))
+}

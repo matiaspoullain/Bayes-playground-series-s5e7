@@ -102,3 +102,50 @@ test_that("prepare_stage1_data produces snake_case modeling columns with NA prop
   expect_true(is.list(out$stats))
   expect_true(all(c("impute", "standardize") %in% names(out$stats)))
 })
+
+test_that("prepare_stage2_data recodes/renames but leaves NAs untouched (no impute, no standardize)", {
+  df <- data.frame(
+    Time_spent_Alone = c(1, NA, 3, 4),
+    Social_event_attendance = c(2, 3, NA, 5),
+    Going_outside = c(1, 2, 3, 4),
+    Friends_circle_size = c(5, 6, 7, 8),
+    Post_frequency = c(1, 1, 1, 1),
+    Stage_fear = c("Yes", "No", NA, "No"),
+    Drained_after_socializing = c("No", "Yes", "No", NA),
+    Personality = c("Introvert", "Extrovert", "Introvert", "Extrovert")
+  )
+  out <- prepare_stage2_data(df)
+
+  expected_cols <- c(
+    "personality_introvert", "time_spent_alone", "social_event_attendance", "going_outside",
+    "friends_circle_size", "post_frequency", "stage_fear_bin", "drained_after_socializing_bin"
+  )
+  expect_true(all(expected_cols %in% names(out$data)))
+
+  # NAs preserved, not imputed
+  expect_equal(out$data$time_spent_alone, c(1, NA, 3, 4))
+  expect_equal(out$data$social_event_attendance, c(2, 3, NA, 5))
+  expect_equal(out$data$stage_fear_bin, c(1L, 0L, NA, 0L))
+  expect_equal(out$data$drained_after_socializing_bin, c(0L, 1L, 0L, NA))
+
+  # not standardized: raw values, no *_z columns, no was_missing_* indicators
+  expect_false(any(grepl("_z$", names(out$data))))
+  expect_false(any(grepl("^was_missing_", names(out$data))))
+
+  expect_equal(out$data$personality_introvert, c(1L, 0L, 1L, 0L))
+})
+
+test_that("read_competition_csv reads a blank field in a character column as NA", {
+  tmp <- tempfile(fileext = ".csv")
+  on.exit(unlink(tmp))
+  writeLines(c(
+    "id,Stage_fear,Time_spent_Alone",
+    "1,Yes,3",
+    "2,,4"
+  ), tmp)
+
+  result <- read_competition_csv(tmp)
+
+  expect_true(is.na(result$Stage_fear[2]))
+  expect_equal(result$Stage_fear, c("Yes", NA))
+})

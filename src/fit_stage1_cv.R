@@ -4,7 +4,7 @@ source("src/metrics.R")
 library(brms)
 library(data.table)
 
-train_raw <- fread("data/raw/train.csv")
+train_raw <- read_competition_csv("data/raw/train.csv")
 target_for_folds <- as.integer(train_raw$Personality == "Introvert")
 folds <- make_stratified_folds(target_for_folds, k = 10, seed = 1)
 
