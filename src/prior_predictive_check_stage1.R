@@ -1,8 +1,9 @@
 source("src/features.R")
 source("src/model_spec_stage1.R")
 library(brms)
+library(data.table)
 
-train_raw <- read.csv("data/raw/train.csv")
+train_raw <- fread("data/raw/train.csv")
 prepared <- prepare_stage1_data(train_raw)
 train <- prepared$data
 

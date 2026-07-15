@@ -2,8 +2,9 @@ source("src/features.R")
 source("src/model_spec_stage1.R")
 source("src/metrics.R")
 library(brms)
+library(data.table)
 
-train_raw <- read.csv("data/raw/train.csv")
+train_raw <- fread("data/raw/train.csv")
 target_for_folds <- as.integer(train_raw$Personality == "Introvert")
 folds <- make_stratified_folds(target_for_folds, k = 10, seed = 1)
 
@@ -11,7 +12,7 @@ dir.create("models", showWarnings = FALSE)
 dir.create("tables_figures/stage1_cv", showWarnings = FALSE, recursive = TRUE)
 
 fold_summaries <- list()
-oof_predictions <- data.frame(
+oof_predictions <- data.table(
   id = train_raw$id, actual = target_for_folds, oof_pred_prob = NA_real_
 )
 
@@ -36,7 +37,7 @@ for (held_out_fold in sort(unique(folds))) {
 
   pred_draws <- posterior_epred(fit, newdata = prepared_holdout$data, allow_new_levels = TRUE)
   pred_prob <- colMeans(pred_draws)
-  oof_predictions$oof_pred_prob[folds == held_out_fold] <- pred_prob
+  set(oof_predictions, i = which(folds == held_out_fold), j = "oof_pred_prob", value = pred_prob)
 
   summ <- summary(fit)
   rhats <- summ$fixed[, "Rhat"]
@@ -44,7 +45,7 @@ for (held_out_fold in sort(unique(folds))) {
   divergences <- sum(subset(nuts_params(fit), Parameter == "divergent__")$Value)
 
   key <- as.character(held_out_fold)
-  fold_summaries[[key]] <- data.frame(
+  fold_summaries[[key]] <- data.table(
     held_out_fold = held_out_fold,
     accuracy = accuracy(prepared_holdout$data$personality_introvert, pred_prob),
     brier = brier_score(prepared_holdout$data$personality_introvert, pred_prob),
@@ -60,9 +61,9 @@ for (held_out_fold in sort(unique(folds))) {
   ))
 }
 
-cv_summary <- do.call(rbind, fold_summaries)
-write.csv(cv_summary, "tables_figures/stage1_cv/cv_summary.csv", row.names = FALSE)
-write.csv(oof_predictions, "tables_figures/stage1_cv/oof_predictions.csv", row.names = FALSE)
+cv_summary <- rbindlist(fold_summaries)
+fwrite(cv_summary, "tables_figures/stage1_cv/cv_summary.csv")
+fwrite(oof_predictions, "tables_figures/stage1_cv/oof_predictions.csv")
 
 cat("\nMean per-fold accuracy:", mean(cv_summary$accuracy), "SD:", sd(cv_summary$accuracy), "\n")
 cat("Pooled out-of-fold accuracy:", accuracy(oof_predictions$actual, oof_predictions$oof_pred_prob), "\n")
