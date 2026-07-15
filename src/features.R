@@ -1,15 +1,21 @@
+library(data.table)
+
 recode_personality <- function(df) {
-  df$personality_introvert <- as.integer(df$Personality == "Introvert")
-  df$stage_fear_bin <- as.integer(df$Stage_fear == "Yes")
-  df$drained_after_socializing_bin <- as.integer(df$Drained_after_socializing == "Yes")
-  df
+  dt <- as.data.table(df)
+  dt[, `:=`(
+    personality_introvert = as.integer(Personality == "Introvert"),
+    stage_fear_bin = as.integer(Stage_fear == "Yes"),
+    drained_after_socializing_bin = as.integer(Drained_after_socializing == "Yes")
+  )]
+  dt[]
 }
 
 add_missingness_indicators <- function(df, cols) {
+  dt <- as.data.table(df)
   for (col in cols) {
-    df[[paste0("was_missing_", col)]] <- as.integer(is.na(df[[col]]))
+    set(dt, j = paste0("was_missing_", col), value = as.integer(is.na(dt[[col]])))
   }
-  df
+  dt[]
 }
 
 impute_from_stats <- function(df, numeric_cols, binary_cols, stats = NULL) {
@@ -18,40 +24,43 @@ impute_from_stats <- function(df, numeric_cols, binary_cols, stats = NULL) {
     as.numeric(names(tab)[which.max(tab)])
   }
 
+  dt <- as.data.table(df)
+
   if (is.null(stats)) {
     stats <- list()
     for (col in numeric_cols) {
-      stats[[col]] <- list(median = median(df[[col]], na.rm = TRUE))
+      stats[[col]] <- list(median = median(dt[[col]], na.rm = TRUE))
     }
     for (col in binary_cols) {
-      stats[[col]] <- list(mode = compute_mode(df[[col]][!is.na(df[[col]])]))
+      stats[[col]] <- list(mode = compute_mode(dt[[col]][!is.na(dt[[col]])]))
     }
   }
 
   for (col in numeric_cols) {
-    df[[col]][is.na(df[[col]])] <- stats[[col]]$median
+    dt[[col]][is.na(dt[[col]])] <- stats[[col]]$median
   }
   for (col in binary_cols) {
-    df[[col]][is.na(df[[col]])] <- stats[[col]]$mode
+    dt[[col]][is.na(dt[[col]])] <- stats[[col]]$mode
   }
 
-  list(data = df, stats = stats)
+  list(data = dt[], stats = stats)
 }
 
 standardize_predictors <- function(df, predictor_cols, stats = NULL) {
+  dt <- as.data.table(df)
+
   if (is.null(stats)) {
-    stats <- list()
-    for (col in predictor_cols) {
-      stats[[col]] <- list(mean = mean(df[[col]]), sd = sd(df[[col]]))
-    }
+    stats <- setNames(
+      lapply(predictor_cols, function(col) list(mean = mean(dt[[col]]), sd = sd(dt[[col]]))),
+      predictor_cols
+    )
   }
 
   for (col in predictor_cols) {
-    z_col <- paste0(col, "_z")
-    df[[z_col]] <- (df[[col]] - stats[[col]]$mean) / stats[[col]]$sd
+    set(dt, j = paste0(col, "_z"), value = (dt[[col]] - stats[[col]]$mean) / stats[[col]]$sd)
   }
 
-  list(data = df, stats = stats)
+  list(data = dt[], stats = stats)
 }
 
 make_stratified_folds <- function(y, k, seed = 1) {
