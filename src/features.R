@@ -91,9 +91,11 @@ make_stratified_folds <- function(y, k, seed = 1) {
 #'
 #' @param df Raw data.frame/data.table with PascalCase columns
 #'   (`Time_spent_Alone`, `Stage_fear`, ...), as read from `train.csv` or
-#'   `test.csv`. `test.csv` has no `Personality` column, which
-#'   `recode_personality()` tolerates (the resulting `personality_introvert`
-#'   column is simply all-`NA`).
+#'   `test.csv`. Must include a `Personality` column; `recode_personality()`
+#'   requires it and errors (`object 'Personality' not found`) if it is absent.
+#'   `test.csv` lacks `Personality` and therefore cannot be passed to this
+#'   function as-is; a caller must add a placeholder `Personality` column
+#'   first.
 #' @param stats Optional list with `impute` and `standardize` elements
 #'   (as produced by a prior call's `$stats`), used to reuse training-fold
 #'   statistics on held-out data instead of recomputing them. Defaults to
