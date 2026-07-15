@@ -10,9 +10,8 @@ dir.create("tables_figures/stage1_report", showWarnings = FALSE, recursive = TRU
 # --- Table + Figure: odds ratios (exp of fixed-effect coefficients), 95% CrI ---
 # Uses the actual posterior draws (not just the summary) so the plot can show the
 # full posterior density as a "shadow" behind each point + interval, via ggdist's
-# half-eye geom -- not just a single summary pointrange. This matters here more
-# than usual: several was_missing_* terms have very wide, near-prior-width
-# posteriors, and the shape (not just the endpoints) is part of the finding.
+# half-eye geom -- not just a single summary pointrange, so the shape (not just the
+# endpoints) of each predictor's posterior is visible at a glance.
 
 fixef_terms <- c(
   "time_spent_alone_z", "social_event_attendance_z", "going_outside_z",
@@ -31,10 +30,9 @@ posterior_or_long <- rbindlist(lapply(fixef_terms, function(term) {
 # Point estimate uses the median, not the mean, of the per-draw odds ratios. The
 # median commutes with the exp() transform (median(exp(x)) == exp(median(x))), so
 # it agrees with exp(fixef(fit)) on the log-odds scale; the mean does not, and for
-# a wide, right-skewed posterior (e.g. was_missing_stage_fear, SE ~2.5 on the log-odds
-# scale) mean(exp(draws)) is pulled far into the right tail by Jensen's inequality --
-# it comes out around 26 here, which would misleadingly read as a huge effect for a
-# coefficient that is in fact indistinguishable from its normal(0, 2.5) prior.
+# a wide or right-skewed posterior on the log-odds scale, mean(exp(draws)) is pulled
+# into the right tail by Jensen's inequality, which can misleadingly overstate the
+# effect relative to the median-based odds ratio.
 odds_ratios <- posterior_or_long[, .(
   odds_ratio = median(odds_ratio),
   or_lower_95 = quantile(odds_ratio, 0.025),
@@ -59,11 +57,7 @@ ggplot(posterior_or_long, aes(y = term, x = odds_ratio)) +
   labs(
     x = "Odds ratio (log10 scale)", y = NULL,
     title = "Stage 1 odds ratios by predictor",
-    subtitle = paste0(
-      "Posterior distribution, median & 95% CrI (dashed line: no effect, OR = 1)\n",
-      "was_missing_stage_fear / was_missing_drained_after_socializing: near-null medians,\n",
-      "essentially prior-width CrIs -- individually non-identifiable"
-    )
+    subtitle = "Posterior distribution, median & 95% CrI (dashed line: no effect, OR = 1)"
   ) +
   theme_minimal(base_size = 12)
 ggsave(
@@ -99,8 +93,6 @@ cat("\n--- was_missing_* MNAR screen (95% CrI on the odds-ratio scale) ---\n")
 print(missing_summary[order(term)])
 
 confirmed_mnar <- missing_summary[crosses_or_1 == FALSE, term]
-non_identified <- c("was_missing_stage_fear", "was_missing_drained_after_socializing")
-non_identified_flagged <- missing_summary[term %in% non_identified]
 
 cat("\n--- Confirmed MNAR effects (95% CrI excludes OR = 1) ---\n")
 if (length(confirmed_mnar) > 0) {
@@ -108,27 +100,3 @@ if (length(confirmed_mnar) > 0) {
 } else {
   cat("None -- no was_missing_* term's 95% CrI excludes OR = 1.\n")
 }
-
-cat(
-  "\n--- Non-identifiability finding: was_missing_stage_fear /",
-  "was_missing_drained_after_socializing ---\n"
-)
-cat(
-  "These two missingness indicators are almost certainly collinear with each other",
-  "(a respondent who skips the Stage_fear question is very likely to also skip",
-  "Drained_after_socializing), mirroring the same individual-vs-sum non-identifiability",
-  "pattern the design spec anticipated for stage_fear_bin/drained_after_socializing_bin",
-  "themselves. Unlike that pair, however, these two missingness coefficients came back",
-  "essentially unchanged from their normal(0, 2.5) prior -- the likelihood contributed",
-  "almost no information about how to split the shared missingness signal between them",
-  "individually:\n"
-)
-print(non_identified_flagged)
-cat(
-  "\nInterpretation: we cannot separately attribute an MNAR effect to stage_fear",
-  "missingness vs. drained_after_socializing missingness from this data -- their",
-  "combined/joint missingness pattern may still be informative, but Stage 1's flat",
-  "specification (independent was_missing_* terms) cannot resolve it. A joint",
-  "missingness indicator or an explicit sum (as done above for the bin terms) would",
-  "be needed to test that jointly, and is left for a later stage / follow-up.\n"
-)
