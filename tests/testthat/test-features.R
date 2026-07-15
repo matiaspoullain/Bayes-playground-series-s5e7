@@ -65,3 +65,40 @@ test_that("make_stratified_folds is deterministic given the same seed", {
   y <- rep(c(1, 0), 50)
   expect_equal(make_stratified_folds(y, k = 5, seed = 7), make_stratified_folds(y, k = 5, seed = 7))
 })
+
+test_that("prepare_stage1_data produces snake_case modeling columns with NA propagated to was_missing_*", {
+  df <- data.frame(
+    Time_spent_Alone = c(1, NA, 3, 4),
+    Social_event_attendance = c(2, 3, NA, 5),
+    Going_outside = c(1, 2, 3, 4),
+    Friends_circle_size = c(5, 6, 7, 8),
+    Post_frequency = c(1, 1, 1, 1),
+    Stage_fear = c("Yes", "No", NA, "No"),
+    Drained_after_socializing = c("No", "Yes", "No", NA),
+    Personality = c("Introvert", "Extrovert", "Introvert", "Extrovert")
+  )
+  out <- prepare_stage1_data(df)
+
+  expected_cols <- c(
+    "personality_introvert",
+    "time_spent_alone_z", "social_event_attendance_z", "going_outside_z",
+    "friends_circle_size_z", "post_frequency_z",
+    "stage_fear_bin", "drained_after_socializing_bin",
+    "was_missing_time_spent_alone", "was_missing_social_event_attendance",
+    "was_missing_going_outside", "was_missing_friends_circle_size",
+    "was_missing_post_frequency", "was_missing_stage_fear",
+    "was_missing_drained_after_socializing"
+  )
+  expect_true(all(expected_cols %in% names(out$data)))
+
+  expect_equal(out$data$was_missing_time_spent_alone, c(0L, 1L, 0L, 0L))
+  expect_equal(out$data$was_missing_social_event_attendance, c(0L, 0L, 1L, 0L))
+  expect_equal(out$data$was_missing_stage_fear, c(0L, 0L, 1L, 0L))
+  expect_equal(out$data$was_missing_drained_after_socializing, c(0L, 0L, 0L, 1L))
+
+  expect_false(anyNA(out$data$time_spent_alone_z))
+  expect_false(anyNA(out$data$stage_fear_bin))
+
+  expect_true(is.list(out$stats))
+  expect_true(all(c("impute", "standardize") %in% names(out$stats)))
+})
