@@ -1,0 +1,39 @@
+[
+  {
+    "name": "sample_submission.csv",
+    "size": 98815,
+    "columns": [
+      "id",
+      "Personality"
+    ]
+  },
+  {
+    "name": "test.csv",
+    "size": 195267,
+    "columns": [
+      "id",
+      "Time_spent_Alone",
+      "Stage_fear",
+      "Social_event_attendance",
+      "Going_outside",
+      "Drained_after_socializing",
+      "Friends_circle_size",
+      "Post_frequency"
+    ]
+  },
+  {
+    "name": "train.csv",
+    "size": 759814,
+    "columns": [
+      "id",
+      "Time_spent_Alone",
+      "Stage_fear",
+      "Social_event_attendance",
+      "Going_outside",
+      "Drained_after_socializing",
+      "Friends_circle_size",
+      "Post_frequency",
+      "Personality"
+    ]
+  }
+]
