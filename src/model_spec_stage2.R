@@ -8,44 +8,37 @@ stage2_formula <- function() {
   )
 
   bf_time_spent_alone <- bf(
-    time_spent_alone | mi() ~ mi(social_event_attendance) + mi(going_outside) + mi(friends_circle_size) +
-      mi(post_frequency) + mi(stage_fear_bin) + mi(drained_after_socializing_bin) + personality_introvert,
+    time_spent_alone | mi() ~ mi(drained_after_socializing_bin) + mi(going_outside) + personality_introvert,
     family = gaussian()
   )
 
   bf_social_event_attendance <- bf(
-    social_event_attendance | mi() ~ mi(time_spent_alone) + mi(going_outside) + mi(friends_circle_size) +
-      mi(post_frequency) + mi(stage_fear_bin) + mi(drained_after_socializing_bin) + personality_introvert,
+    social_event_attendance | mi() ~ mi(drained_after_socializing_bin) + mi(time_spent_alone) + personality_introvert,
     family = gaussian()
   )
 
   bf_going_outside <- bf(
-    going_outside | mi() ~ mi(time_spent_alone) + mi(social_event_attendance) + mi(friends_circle_size) +
-      mi(post_frequency) + mi(stage_fear_bin) + mi(drained_after_socializing_bin) + personality_introvert,
+    going_outside | mi() ~ mi(drained_after_socializing_bin) + mi(time_spent_alone) + personality_introvert,
     family = gaussian()
   )
 
   bf_friends_circle_size <- bf(
-    friends_circle_size | mi() ~ mi(time_spent_alone) + mi(social_event_attendance) + mi(going_outside) +
-      mi(post_frequency) + mi(stage_fear_bin) + mi(drained_after_socializing_bin) + personality_introvert,
+    friends_circle_size | mi() ~ mi(drained_after_socializing_bin) + mi(time_spent_alone) + personality_introvert,
     family = gaussian()
   )
 
   bf_post_frequency <- bf(
-    post_frequency | mi() ~ mi(time_spent_alone) + mi(social_event_attendance) + mi(going_outside) +
-      mi(friends_circle_size) + mi(stage_fear_bin) + mi(drained_after_socializing_bin) + personality_introvert,
+    post_frequency | mi() ~ mi(drained_after_socializing_bin) + mi(time_spent_alone) + personality_introvert,
     family = gaussian()
   )
 
   bf_stage_fear_bin <- bf(
-    stage_fear_bin | mi() ~ mi(time_spent_alone) + mi(social_event_attendance) + mi(going_outside) +
-      mi(friends_circle_size) + mi(post_frequency) + mi(drained_after_socializing_bin) + personality_introvert,
+    stage_fear_bin | mi() ~ mi(drained_after_socializing_bin) + mi(time_spent_alone) + personality_introvert,
     family = gaussian()
   )
 
   bf_drained_after_socializing_bin <- bf(
-    drained_after_socializing_bin | mi() ~ mi(time_spent_alone) + mi(social_event_attendance) + mi(going_outside) +
-      mi(friends_circle_size) + mi(post_frequency) + mi(stage_fear_bin) + personality_introvert,
+    drained_after_socializing_bin | mi() ~ mi(stage_fear_bin) + mi(time_spent_alone) + personality_introvert,
     family = gaussian()
   )
 
@@ -56,11 +49,13 @@ stage2_formula <- function() {
 
 # Priors chosen against the exact resp/class/coef names brms::get_prior() reports for
 # stage2_formula() (see design spec "Missing-data strategy - full detail" and Task 11 report for
-# the full get_prior() table). Main-model (resp = "personalityintrovert") priors match the
-# current stage1_priors() so Stage 1 and Stage 2 encode the same beliefs about the personality
-# model. Each of the 7 predictor sub-models gets a generic normal(0, 2) on its own b-class
-# coefficients (coef left unspecified so it applies to every b-class coefficient for that resp);
-# sub-model Intercepts are left at brms's own default (not customized).
+# the full get_prior() table; the "Fallback invoked during Task 12" section documents why each
+# sub-model's mi() covariate set was later reduced from 6 to 2 predictors). Main-model
+# (resp = "personalityintrovert") priors match the current stage1_priors() so Stage 1 and Stage 2
+# encode the same beliefs about the personality model. Each of the 7 predictor sub-models gets a
+# generic normal(0, 2) on its own b-class coefficients (coef left unspecified so it applies to
+# every b-class coefficient for that resp - now just the 2 mi() covariates plus
+# personality_introvert); sub-model Intercepts are left at brms's own default (not customized).
 stage2_priors <- function() {
   c(
     set_prior("normal(-1.04, 1)", class = "Intercept", resp = "personalityintrovert"),
