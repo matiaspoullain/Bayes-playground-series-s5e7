@@ -3,11 +3,20 @@ source("src/metrics.R")
 library(brms)
 library(data.table)
 
-# Question: does Model B (outcome-free imputation) do at least as well as Model A
-# (outcome-informed imputation) even on the COMPLETE rows Model A was designed for?
-# If so, the two-model split adds complexity without adding predictive value, and
-# Model B alone should replace both. Reuses the per-fold fits already saved by
-# src/fit_stage2_cv.R - no refitting.
+# HISTORICAL DECISION RECORD, not part of the active pipeline: this is the analysis
+# that led to simplifying Stage 2 down to a single model (see src/fit_stage2_full.R,
+# src/fit_stage2_cv.R, and the design spec's "Missing-data strategy" section).
+# Question asked at the time: does Model B (outcome-free imputation) do at least as
+# well as Model A (outcome-informed imputation) even on the COMPLETE rows Model A
+# was specifically designed for? If so, the two-model split wasn't worth its
+# complexity. Answer: yes, close enough (~0.003 AUC edge for A) that the split was
+# dropped in favor of Model B alone.
+#
+# This script is NOT re-runnable against the current pipeline: it reads
+# models/stage2_cv_fold_<k>_modelA.rds / _modelB.rds, the two-model CV's per-fold
+# fit files from before the simplification -- fit_stage2_cv.R no longer produces
+# those (it now saves a single models/stage2_cv_fold_<k>.rds per fold). Kept for
+# the record of how the decision was made, not as a script to run again.
 
 predictor_cols <- c(
   "time_spent_alone", "social_event_attendance", "going_outside",
