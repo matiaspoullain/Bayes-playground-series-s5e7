@@ -2,11 +2,19 @@ library(data.table)
 
 recode_personality <- function(df) {
   dt <- as.data.table(df)
-  dt[, `:=`(
-    personality_introvert = as.integer(Personality == "Introvert"),
-    stage_fear_bin = as.integer(Stage_fear == "Yes"),
-    drained_after_socializing_bin = as.integer(Drained_after_socializing == "Yes")
-  )]
+  if ("Personality" %in% names(dt)) {
+    dt[, `:=`(
+      personality_introvert = as.integer(Personality == "Introvert"),
+      stage_fear_bin = as.integer(Stage_fear == "Yes"),
+      drained_after_socializing_bin = as.integer(Drained_after_socializing == "Yes")
+    )]
+  } else {
+    dt[, `:=`(
+      personality_introvert = NA_integer_,
+      stage_fear_bin = as.integer(Stage_fear == "Yes"),
+      drained_after_socializing_bin = as.integer(Drained_after_socializing == "Yes")
+    )]
+  }
   dt[]
 }
 
@@ -91,11 +99,9 @@ make_stratified_folds <- function(y, k, seed = 1) {
 #'
 #' @param df Raw data.frame/data.table with PascalCase columns
 #'   (`Time_spent_Alone`, `Stage_fear`, ...), as read from `train.csv` or
-#'   `test.csv`. Must include a `Personality` column; `recode_personality()`
-#'   requires it and errors (`object 'Personality' not found`) if it is absent.
-#'   `test.csv` lacks `Personality` and therefore cannot be passed to this
-#'   function as-is; a caller must add a placeholder `Personality` column
-#'   first.
+#'   `test.csv`. `recode_personality()` tolerates a missing `Personality`
+#'   column (as in `test.csv`) — `personality_introvert` comes back all-`NA`
+#'   in that case, rather than erroring.
 #' @param stats Optional list with `impute` and `standardize` elements
 #'   (as produced by a prior call's `$stats`), used to reuse training-fold
 #'   statistics on held-out data instead of recomputing them. Defaults to
@@ -170,7 +176,7 @@ prepare_stage2_data <- function(df) {
     Drained_after_socializing = "drained_after_socializing"
   )
   dt <- as.data.table(df)
-  setnames(dt, old = names(raw_to_snake), new = unname(raw_to_snake))
+  setnames(dt, old = names(raw_to_snake), new = unname(raw_to_snake), skip_absent = TRUE)
 
   list(data = dt[])
 }

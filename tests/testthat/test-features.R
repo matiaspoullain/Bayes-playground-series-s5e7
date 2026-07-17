@@ -13,6 +13,18 @@ test_that("recode_personality creates 0/1 target and binary predictor columns, p
   expect_equal(result$drained_after_socializing_bin, c(0L, 1L, NA))
 })
 
+test_that("recode_personality tolerates a missing Personality column (as in test.csv)", {
+  df <- data.frame(
+    Stage_fear = c("Yes", "No"),
+    Drained_after_socializing = c("No", "Yes")
+  )
+  result <- recode_personality(df)
+
+  expect_equal(result$personality_introvert, c(NA_integer_, NA_integer_))
+  expect_equal(result$stage_fear_bin, c(1L, 0L))
+  expect_equal(result$drained_after_socializing_bin, c(0L, 1L))
+})
+
 test_that("add_missingness_indicators flags NA per column", {
   df <- data.frame(x = c(1, NA, 3), y = c(NA, NA, "a"))
   result <- add_missingness_indicators(df, cols = c("x", "y"))
