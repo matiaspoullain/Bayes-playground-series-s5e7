@@ -140,25 +140,27 @@ prepare_stage1_data <- function(df, stats = NULL) {
   list(data = std$data, stats = list(impute = imputed$stats, standardize = std$stats))
 }
 
-#' Prepare raw train/test data for the Stage 2 (joint missing-data) model
+#' Prepare raw train/test data for the Stage 2 (mice + brm_multiple) model
 #'
 #' Runs only the recode + rename steps of the Stage 1 pipeline
 #' (`recode_personality()`, then the same PascalCase -> snake_case rename
 #' `prepare_stage1_data()` uses) and stops there: no missingness
 #' indicators, no imputation, no standardization. `NA`s in the 7
 #' partially-missing predictor columns are left exactly as they appear in
-#' the raw data, because Stage 2's `mi()` sub-models (see
-#' `stage2_formula()` in `model_spec_stage2.R`) consume the raw,
-#' unstandardized, still-missing values directly and model the missingness
-#' themselves rather than having it point-imputed away beforehand.
+#' the raw data, because Stage 2 imputes them downstream via `mice()` (see
+#' `src/fit_stage2_full.R`/`src/fit_stage2_cv.R`) rather than having them
+#' point-imputed away here. (An earlier design used `brms`'s own `mi()`
+#' multivariate sub-models for this instead of external `mice` imputation;
+#' that approach was abandoned — see the design spec's "Missing-data
+#' strategy" section — but this function's recode/rename/leave-NAs-intact
+#' contract is unchanged by that pivot, so it's still the right prep step
+#' for Stage 2's current `mice`-based pipeline.)
 #'
 #' @param df Raw data.frame/data.table with PascalCase columns
 #'   (`Time_spent_Alone`, `Stage_fear`, ...), as read from `train.csv` or
-#'   `test.csv`. Must include a `Personality` column; `recode_personality()`
-#'   requires it and errors (`object 'Personality' not found`) if it is
-#'   absent. `test.csv` lacks `Personality` and therefore cannot be passed
-#'   to this function as-is; a caller must add a placeholder `Personality`
-#'   column first.
+#'   `test.csv`. `recode_personality()` tolerates a missing `Personality`
+#'   column (as in `test.csv`) — `personality_introvert` comes back all-`NA`
+#'   in that case, rather than erroring.
 #'
 #' @return A list with a single `data` element: the prepared data.table,
 #'   including `personality_introvert`, the 5 snake_case count-like
