@@ -22,7 +22,7 @@ Some observations:
 
 ![Missingness by column](tables_figures/eda/missingness_by_column.png)
 
-Missingness is spread across every column (5.7%–10.2% each), and it isn't random: rows missing `Stage_fear`, for example, are 39% Introvert vs. a 24.5% baseline among rows that answered it. That's a real MNAR (missing-not-at-random) signal — introverts are plausibly more likely to skip a self-report question about social anxiety — and it's exactly the kind of thing a naive `dropna()` throws away.
+Missingness is spread across every column (5.7%–10.2% each), and it isn't random: rows missing `Stage_fear`, for example, are 39% Introvert vs. a 24.5% baseline among rows that answered it. That's a real MNAR signal and it's exactly the kind of thing a naive `dropna()` throws away.
 
 ## 3. The modeling journey
 
