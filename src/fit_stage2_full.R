@@ -18,23 +18,33 @@ train_raw <- read_competition_csv("data/raw/train.csv")
 prepared <- prepare_stage2_data(train_raw)$data
 
 # Standardization stats computed once, from each numeric predictor's OBSERVED
-# (non-missing) values only -- applied identically to all M imputed copies below,
-# so the standardized scale (and thus the pooled coefficients) is consistent
-# across imputations, not re-derived per-copy.
+# (non-missing) values only -- applied identically to all M imputed copies below.
 standardize_stats <- lapply(numeric_cols, function(col) {
   list(mean = mean(prepared[[col]], na.rm = TRUE), sd = sd(prepared[[col]], na.rm = TRUE))
 })
 names(standardize_stats) <- numeric_cols
 
-mice_input <- as.data.frame(prepared[, c(predictor_cols, "personality_introvert"), with = FALSE])
+# mice's input EXCLUDES personality_introvert entirely (not just left unused) -- it
+# must not be a column at all, so it cannot inform imputation of any predictor. This
+# is what makes the same trained model directly usable on test.csv, which never has
+# an outcome column at all: the imputation process training relied on and the
+# imputation process a real prediction-time row would need are identical. An earlier
+# design also tried including the outcome in the imputation model (legitimate MI
+# practice for training data, where the outcome is always known) and used a second
+# "Model A" for rows with no missing predictors; an AUC comparison on complete rows
+# (src/compare_modelA_modelB_on_complete_rows.R) found only a ~0.003 AUC edge for
+# that approach, too small to justify keeping two models/two imputation passes -- see
+# design spec's "Missing-data strategy" section for the full account.
+mice_input <- as.data.frame(prepared[, predictor_cols, with = FALSE])
 
 m_value <- 20
-cat("Running mice(m =", m_value, ", maxit = 5)...\n")
+cat("Running mice(m =", m_value, ", maxit = 5) WITHOUT personality_introvert as a predictor...\n")
 imp <- mice(mice_input, m = m_value, maxit = 5, seed = 1, printFlag = TRUE)
 
-cat("\nBuilding", m_value, "standardized completed datasets...\n")
+cat("\nBuilding", m_value, "standardized completed datasets (reattaching the real outcome for fitting)...\n")
 completed_list <- lapply(seq_len(m_value), function(i) {
   dt <- as.data.table(complete(imp, i))
+  dt[, personality_introvert := prepared$personality_introvert]
   for (col in numeric_cols) {
     set(dt, j = paste0(col, "_z"), value = (dt[[col]] - standardize_stats[[col]]$mean) / standardize_stats[[col]]$sd)
   }
@@ -54,8 +64,8 @@ fit <- brm_multiple(
 )
 
 # Save immediately, before any post-processing that could error and lose the fit
-# (this order bit us once already: a bug in per-imputation diagnostic code below
-# crashed the script and the completed fit, never having been saved, was lost).
+# (this order bit us once already: a bug in per-imputation diagnostic code crashed
+# the script after a completed fit that was never saved).
 dir.create("models", showWarnings = FALSE)
 saveRDS(fit, "models/stage2_fit_full.rds")
 saveRDS(imp, "models/stage2_mice_imp.rds")
@@ -64,11 +74,6 @@ cat("\nFit and imputation object saved to models/.\n")
 
 print(summary(fit))
 
-# Per-imputation convergence check, per ?brm_multiple's own documented approach
-# (there is no fit$rhats field - brm_multiple's overall Rhat/ESS are explicitly
-# "not informative" per its own summary() output; the documented way to check
-# convergence is to subset the combined draws back into per-imputation chain
-# blocks and run posterior::summarise_draws() on each block separately).
 library(posterior)
 draws <- as_draws_array(fit)
 n_chains_total <- posterior::nchains(draws)
