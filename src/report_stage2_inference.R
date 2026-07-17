@@ -45,15 +45,37 @@ odds_ratios <- posterior_or_long[, .(
   or_upper_95 = quantile(odds_ratio, 0.975)
 ), by = term]
 
+# stage_fear_bin / drained_after_socializing_bin run substantially larger here
+# (OR ~30/~16) than in Stage 1 (OR ~6.4/~12.7) for the same coefficients, and this
+# is not just the usual "individual collinear coefficients are unstable" story --
+# the sum below is also ~5.8x larger in Stage 2 than Stage 1 (see
+# stage_fear_drained_sum.csv), which a pure collinearity split would not produce.
+# The real mechanism, verified directly against models/stage2_mice_imp.rds: mice's
+# imputation model includes personality_introvert as a predictor (standard,
+# spec-endorsed MI practice -- see design spec "Missing-data strategy", not
+# leakage). Because stage_fear_bin and drained_after_socializing_bin are
+# themselves a near-duplicate pair (r = 0.995, see design spec
+# "Multicollinearity") AND very strongly outcome-correlated, mice reconstructs
+# their originally-missing values almost deterministically from the true label:
+# averaged across the 20 imputations, stage_fear_bin is imputed as 1 ("Yes") for
+# 97.7% of rows with true personality_introvert = 1 vs. only 1.2% of rows with
+# true personality_introvert = 0 (drained_after_socializing_bin: 98.7% vs. 3.1%).
+# Stage 1's mode imputation, by contrast, sets every missing row to the same
+# constant majority value (0/"No") regardless of the true label, and only
+# partially recovers the lost signal via the separate was_missing_* indicators
+# (OR 3.3/6.3 there) -- so Stage 1 has no equivalent outcome-driven boost. This is
+# legitimate MI behavior per the design spec, but borders on circularity (the
+# outcome directly informs the imputed value of these two dominant predictors for
+# ~6-10% of rows), so both individual coefficients' unusually large magnitude
+# should be read with that in mind -- the derived sum below is the more robust
+# quantity to lead with for this pair, per the design spec.
+odds_ratios[
+  term %in% c("stage_fear_bin", "drained_after_socializing_bin"),
+  note := "near-duplicate pair, outcome-informed imputation - see sum in stage_fear_drained_sum.csv"
+]
 fwrite(odds_ratios, "tables_figures/stage2_report/odds_ratios_summary.csv")
 cat("\n--- Stage 2 odds-ratio table (all 7 predictors, 95% CrI) ---\n")
 print(odds_ratios)
-
-# Observation only (not a required derived-quantity block for this report):
-# stage_fear_bin and drained_after_socializing_bin are still the same
-# near-duplicate pair as in Stage 1 (r = 0.995, see design spec
-# "Multicollinearity") -- both individual CrIs below still exclude OR = 1, so as
-# in Stage 1 this is confirmatory rather than a rescue situation.
 
 term_order <- odds_ratios[order(odds_ratio), term]
 posterior_or_long[, term := factor(term, levels = term_order)]
@@ -76,3 +98,23 @@ ggsave(
   "tables_figures/stage2_report/odds_ratios_forest_plot.png",
   width = 10, height = 7, bg = "white"
 )
+
+# --- Derived quantity: stage_fear_bin + drained_after_socializing_bin posterior sum ---
+# Same computation as report_stage1_inference.R's identically-named block: per-draw
+# sum (not a sum of point estimates), so the CrI properly reflects the joint
+# posterior rather than treating the two coefficients as independent. Per the
+# design spec "Multicollinearity" section, this sum -- not the individual
+# coefficients above -- is what "Reporting insights" should lead with for this
+# pair, and it is the more important comparison point against Stage 1's own sum
+# (tables_figures/stage1_report/stage_fear_drained_sum.csv) given the
+# outcome-informed-imputation caveat documented above.
+combined_effect <- draws_df$b_stage_fear_bin + draws_df$b_drained_after_socializing_bin
+stage_fear_drained_sum <- data.table(
+  term = "stage_fear_bin + drained_after_socializing_bin (sum)",
+  estimate = mean(combined_effect),
+  q2.5 = quantile(combined_effect, 0.025),
+  q97.5 = quantile(combined_effect, 0.975)
+)
+fwrite(stage_fear_drained_sum, "tables_figures/stage2_report/stage_fear_drained_sum.csv")
+cat("\n--- stage_fear_bin + drained_after_socializing_bin posterior sum ---\n")
+print(stage_fear_drained_sum)
