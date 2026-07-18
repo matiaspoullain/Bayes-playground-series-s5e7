@@ -1,6 +1,5 @@
 library(brms)
 library(ggplot2)
-library(ggdist)
 library(posterior)
 library(data.table)
 
@@ -13,10 +12,9 @@ library(data.table)
 fit <- readRDS("models/stage2_fit_full.rds")
 dir.create("tables_figures/stage2_report", showWarnings = FALSE, recursive = TRUE)
 
-# --- Table + Figure: odds ratios (exp of fixed-effect coefficients), 95% CrI ---
-# Same pattern as report_stage1_inference.R: the full posterior draws (not just the
-# summary) let the plot show the full posterior density as a "shadow" behind each
-# point + interval, via ggdist's half-eye geom.
+# --- Table + Figure: odds ratios (exp of fixed-effect coefficients), 50%/95% CrI ---
+# Same two-width interval style as report_stage1_inference.R (thick bar = 50% CrI,
+# thin line = 95% CrI, dot = median) -- see that script for the rationale.
 #
 # Drops the 7 was_missing_* indicators Stage 1 carried -- Stage 2 is fit on
 # mice-imputed data, so there's no missingness left to flag; the remaining 7
@@ -51,10 +49,13 @@ odds_ratio_draws_long <- function(draws_df, terms) {
 #' median-based odds ratio.
 #'
 #' @param posterior_or_long output of `odds_ratio_draws_long()`
-#' @return one row per term: `term`, `odds_ratio`, `or_lower_95`, `or_upper_95`
+#' @return one row per term: `term`, `odds_ratio`, `or_lower_50`, `or_upper_50`,
+#'   `or_lower_95`, `or_upper_95`
 summarize_odds_ratios <- function(posterior_or_long) {
   posterior_or_long[, .(
     odds_ratio = median(odds_ratio),
+    or_lower_50 = quantile(odds_ratio, 0.25),
+    or_upper_50 = quantile(odds_ratio, 0.75),
     or_lower_95 = quantile(odds_ratio, 0.025),
     or_upper_95 = quantile(odds_ratio, 0.975)
   ), by = term]
@@ -93,37 +94,35 @@ odds_ratios[
 ]
 fwrite(odds_ratios, "tables_figures/stage2_report/odds_ratios_summary.csv")
 
-cat("\n--- Stage 2 odds-ratio table (all 7 predictors, 95% CrI) ---\n")
+cat("\n--- Stage 2 odds-ratio table (all 7 predictors, 50%/95% CrI) ---\n")
 print(odds_ratios)
 
-#' Build a forest plot of the full posterior odds-ratio distributions
+#' Build a two-width interval plot (median, 50% CrI, 95% CrI) of the odds ratios
 #'
-#' @param posterior_or_long long per-draw odds ratios (`odds_ratio_draws_long()`)
-#' @param odds_ratios_summary matching per-term median + 95% CrI summary, used
-#'   only to order terms by point estimate
+#' @param odds_ratios_summary per-term median + 50%/95% CrI summary
+#'   (`summarize_odds_ratios()`), ordered by point estimate for the plot's y-axis
 #' @return a ggplot object
-plot_odds_ratio_forest <- function(posterior_or_long, odds_ratios_summary) {
+plot_odds_ratio_forest <- function(odds_ratios_summary) {
   term_order <- odds_ratios_summary[order(odds_ratio), term]
-  plot_data <- copy(posterior_or_long)
+  plot_data <- copy(odds_ratios_summary)
   plot_data[, term := factor(term, levels = term_order)]
 
   ggplot(plot_data, aes(y = term, x = odds_ratio)) +
     geom_vline(xintercept = 1, linetype = "dashed", colour = "grey40", linewidth = 0.5) +
-    stat_halfeye(
-      .width = 0.95, point_interval = "median_qi",
-      fill = "#4C72B0", slab_alpha = 0.55,
-      colour = "#2A4D77", linewidth = 1.1, point_size = 3
-    ) +
+    geom_linerange(aes(xmin = or_lower_95, xmax = or_upper_95), linewidth = 0.7, colour = "#2A4D77") +
+    geom_linerange(aes(xmin = or_lower_50, xmax = or_upper_50), linewidth = 2.6, colour = "#2A4D77") +
+    geom_point(size = 2.4, colour = "white") +
+    geom_point(size = 1.3, colour = "#2A4D77") +
     scale_x_log10() +
     labs(
       x = "Odds ratio (log10 scale)", y = NULL,
       title = "Stage 2 odds ratios by predictor",
-      subtitle = "Posterior distribution, median & 95% CrI (dashed line: no effect, OR = 1)"
+      subtitle = "Median, thick bar = 50% CrI, thin line = 95% CrI (dashed: no effect, OR = 1)"
     ) +
     theme_minimal(base_size = 12)
 }
 
-plot_odds_ratio_forest(posterior_or_long, odds_ratios)
+plot_odds_ratio_forest(odds_ratios)
 ggsave(
   "tables_figures/stage2_report/odds_ratios_forest_plot.png",
   width = 10, height = 7, bg = "white"

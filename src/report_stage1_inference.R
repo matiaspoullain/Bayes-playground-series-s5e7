@@ -1,17 +1,17 @@
 library(brms)
 library(ggplot2)
-library(ggdist)
 library(posterior)
 library(data.table)
 
 fit <- readRDS("models/stage1_fit_full.rds")
 dir.create("tables_figures/stage1_report", showWarnings = FALSE, recursive = TRUE)
 
-# --- Table + Figure: odds ratios (exp of fixed-effect coefficients), 95% CrI ---
-# Uses the actual posterior draws (not just the summary) so the plot can show the
-# full posterior density as a "shadow" behind each point + interval, via ggdist's
-# half-eye geom -- not just a single summary pointrange, so the shape (not just the
-# endpoints) of each predictor's posterior is visible at a glance.
+# --- Table + Figure: odds ratios (exp of fixed-effect coefficients), 50%/95% CrI ---
+# Two-width interval plot (thick bar = 50% CrI, thin line = 95% CrI, dot = median) --
+# the standard bayesplot::mcmc_intervals look. Chosen over a full posterior-density
+# plot (e.g. a halfeye) because with 14 terms on one axis, density shadows mostly
+# overlap and add clutter; the two-width interval keeps the "how sure are we"
+# information (a wide 95% but tight 50% signals a long tail, not just noise) without it.
 
 fixef_terms <- c(
   "time_spent_alone_z", "social_event_attendance_z", "going_outside_z",
@@ -35,31 +35,41 @@ posterior_or_long <- rbindlist(lapply(fixef_terms, function(term) {
 # effect relative to the median-based odds ratio.
 odds_ratios <- posterior_or_long[, .(
   odds_ratio = median(odds_ratio),
+  or_lower_50 = quantile(odds_ratio, 0.25),
+  or_upper_50 = quantile(odds_ratio, 0.75),
   or_lower_95 = quantile(odds_ratio, 0.025),
   or_upper_95 = quantile(odds_ratio, 0.975)
 ), by = term]
 
 fwrite(odds_ratios, "tables_figures/stage1_report/odds_ratios_summary.csv")
-cat("\n--- Stage 1 odds-ratio table (all 14 predictors, 95% CrI) ---\n")
+cat("\n--- Stage 1 odds-ratio table (all 14 predictors, 50%/95% CrI) ---\n")
 print(odds_ratios)
 
 term_order <- odds_ratios[order(odds_ratio), term]
-posterior_or_long[, term := factor(term, levels = term_order)]
+odds_ratios[, `:=`(
+  term = factor(term, levels = term_order),
+  is_missing_term = grepl("^was_missing_", term)
+)]
 
-ggplot(posterior_or_long, aes(y = term, x = odds_ratio)) +
+ggplot(odds_ratios, aes(y = term, x = odds_ratio, colour = is_missing_term)) +
   geom_vline(xintercept = 1, linetype = "dashed", colour = "grey40", linewidth = 0.5) +
-  stat_halfeye(
-    .width = 0.95, point_interval = "median_qi",
-    fill = "#4C72B0", slab_alpha = 0.55,
-    colour = "#2A4D77", linewidth = 1.1, point_size = 3
+  geom_linerange(aes(xmin = or_lower_95, xmax = or_upper_95), linewidth = 0.7) +
+  geom_linerange(aes(xmin = or_lower_50, xmax = or_upper_50), linewidth = 2.6) +
+  geom_point(size = 2.4, colour = "white") +
+  geom_point(size = 1.3) +
+  scale_colour_manual(
+    values = c(`FALSE` = "#2A4D77", `TRUE` = "#B23A48"),
+    labels = c(`FALSE` = "raw predictor", `TRUE` = "was_missing_* indicator"),
+    name = NULL
   ) +
   scale_x_log10() +
   labs(
     x = "Odds ratio (log10 scale)", y = NULL,
     title = "Stage 1 odds ratios by predictor",
-    subtitle = "Posterior distribution, median & 95% CrI (dashed line: no effect, OR = 1)"
+    subtitle = "Median, thick bar = 50% CrI, thin line = 95% CrI (dashed: no effect, OR = 1)"
   ) +
-  theme_minimal(base_size = 12)
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "top")
 ggsave(
   "tables_figures/stage1_report/odds_ratios_forest_plot.png",
   width = 10, height = 7, bg = "white"
