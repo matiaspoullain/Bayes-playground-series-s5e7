@@ -32,7 +32,7 @@ We built this in two stages: a causal analysis that decides which predictors bel
 
 ![Causal DAG](tables_figures/stage1_dag/dag.png)
 
-**Stage 2** is a Bayesian logistic regression (`brms`, `bernoulli(link="logit")`) on Stage 1's selected predictors, fit with proper multiple imputation: `mice` generates 20 completed copies of the data, and `brm_multiple()` fits the same model to each copy and pools the posteriors, so the final uncertainty reflects both the usual sampling noise and "how sure are we about the values we guessed." The outcome is deliberately excluded from `mice`'s imputation model — not just unused, structurally absent — so the same fitted model can be applied uniformly to any row, complete or not, including `test.csv` rows that never have a label at all.
+**Stage 2** is a Bayesian logistic regression (`brms`, `bernoulli(link="logit")`) on all 7 predictors, fit with proper multiple imputation (re-fitting on Stage 1's recommended subset is a follow-up, not done yet — see "Stage 1 findings" below): `mice` generates 20 completed copies of the data, and `brm_multiple()` fits the same model to each copy and pools the posteriors, so the final uncertainty reflects both the usual sampling noise and "how sure are we about the values we guessed." The outcome is deliberately excluded from `mice`'s imputation model — not just unused, structurally absent — so the same fitted model can be applied uniformly to any row, complete or not, including `test.csv` rows that never have a label at all.
 
 Two earlier Stage 2 designs didn't make the cut: a fully joint `brms` model using `mi()` for each missing predictor fit cleanly but turned out unable to predict on new rows that have their own missing values. A follow-up two-model split (one model trained with the outcome available for imputation, used only on complete rows) fixed a subtler leakage problem but, once measured, only bought ~0.003 AUC over the single outcome-free model, which was not worth the extra complexity, so we dropped it.
 
@@ -42,7 +42,7 @@ $$\text{personality\_introvert}_i \sim \text{Bernoulli}(p_i)$$
 
 $$\text{logit}(p_i) = \beta_0 + \beta_1 \, \text{time\_alone}_i^z + \beta_2 \, \text{social\_event}_i^z + \beta_3 \, \text{going\_out}_i^z + \beta_4 \, \text{friends}_i^z + \beta_5 \, \text{posts}_i^z + \beta_6 \, \text{stage\_fear}_i + \beta_7 \, \text{drained}_i$$
 
-Superscript $z$ = standardized (observed-value mean/SD). `stage_fear`/`drained` are already 0/1, not standardized. This is Stage 2's formula — Stage 2 is the only fitted predictive model now; Stage 1 doesn't fit anything, it decides which of these terms belong here in the first place (see "Approach" above).
+Superscript $z$ = standardized (observed-value mean/SD). `stage_fear`/`drained` are already 0/1, not standardized. This is Stage 2's formula, still using all 7 original predictors — Stage 2 is the only fitted predictive model now; Stage 1 doesn't fit anything, it recommends which of these terms belong here (not yet acted on — see "Stage 1 findings" below and "Approach" above).
 
 ### Priors, and a surprising coefficient
 
@@ -117,7 +117,7 @@ Pooled across all 20 imputations (not just the first, which is what `brms`'s own
 
 - `src/features.R` — shared feature engineering: `read_competition_csv()` (fixes a real `fread()`/`read.csv()` gotcha — blank fields in character columns read as `""`, not `NA`, unless told otherwise), `recode_personality()`, `prepare_stage1_data()`, `prepare_stage2_data()`, standardization/imputation helpers, stratified folds
 - `src/metrics.R` — hand-written accuracy/AUC/Brier score (no new dependency)
-- `src/stage1_dag_analysis.R` — the new Stage 1: defines and plots the causal DAG (`ggdag`), runs the `glm()`-based coefficient-shift checks that decide which predictors Stage 2 uses
+- `src/stage1_dag_analysis.R` — the new Stage 1: defines and plots the causal DAG (`ggdag`), runs the `glm()`-based coefficient-shift checks that recommend which predictors Stage 2 should use (not yet acted on — Stage 2 still fits all 7)
 - `src/model_spec_stage2.R` — formula, family, priors (single source of truth)
 - `src/fit_stage2_full.R`, `src/fit_stage2_cv.R` — Stage 2 (`mice` + `brm_multiple()`) final fit and cross-validation
 - `src/report_stage2_inference.R` — posterior odds ratios + forest plot
