@@ -8,7 +8,7 @@ This project is part of the **Bayesian Kaggle Challenge**, a series of independe
 
 This entry tackles [Predict the Introverts from the Extroverts](https://www.kaggle.com/competitions/playground-series-s5e7): given 7 self-reported behavioral features (time spent alone, social event attendance, going outside, friends circle size, post frequency, stage fear, drained after socializing), predict whether a person is `Introvert` or `Extrovert`. 18,524 training rows, scored by accuracy on the held-out set.
 
-The dataset's defining feature — and the actual point of this project — is that it's full of holes: **45% of rows are missing at least one of the 7 predictors**. Most public notebooks for this competition just dropped or point-imputed those rows and moved on. We didn't, because "how do you honestly handle missing data" is a much more interesting Bayesian question than squeezing out one more decimal of accuracy on an already near-ceiling leaderboard.
+The dataset's defining feature is that missing data is everywhere: **45% of rows are missing at least one of the 7 predictors**. Most public notebooks for this competition just dropped or point-imputed those rows and moved on. We didn't, because "how do you honestly handle missing data" is a much more interesting Bayesian question than squeezing out one more decimal of accuracy on an already near-ceiling leaderboard.
 
 ## 2. Exploratory findings
 
@@ -16,23 +16,23 @@ The dataset's defining feature — and the actual point of this project — is t
 
 Some observations:
 
-- **Every one of the 7 predictors is unusually strongly correlated with the target** — |r| between 0.66 and 0.91, much stronger than a typical tabular dataset. This is *not* a hard classification problem in the usual sense.
-- **`stage_fear_bin` and `drained_after_socializing_bin` are near-duplicates of each other** (r = 0.995) — whatever one of them says, the other almost certainly says the same thing. That turned out to matter a lot later on.
-- Class balance is moderate, not extreme: **73.95% Extrovert / 26.05% Introvert**.
+- **Every one of the 7 predictors is strongly correlated with the target** — |r| between 0.66 and 0.91, much stronger than a typical tabular dataset. This is *not* a hard classification problem in the usual sense.
+- **`stage_fear_bin` and `drained_after_socializing_bin` are near-duplicates of each other** (r = 0.995).
+- There's some moderate class inbalance: **73.95% Extrovert / 26.05% Introvert**.
 
-![Missingness by column](tables_figures/eda/missingness_by_column.png)
+![Missingness by column](tables_figures/eda/missingness_by_column_by_target.png)
 
 Missingness is spread across every column (5.7%–10.2% each), and it isn't random: rows missing `Stage_fear`, for example, are 39% Introvert vs. a 24.5% baseline among rows that answered it — a real MNAR signal that biases any model that just drops missing rows.
 
 ## 3. Approach
 
-We built this in two stages: a simple baseline, then a version that actually propagates imputation uncertainty instead of pretending imputed values are known.
+We built this in two stages: a simple baseline, then a version that actually propagates imputation uncertainty.
 
 **Stage 1** is a single Bayesian logistic regression (`brms`, `bernoulli(link="logit")`) with median/mode point imputation plus 7 `was_missing_*` indicator variables, one per predictor, flagging whether that row originally had a gap there.
 
 **Stage 2** replaces point imputation with proper multiple imputation: `mice` generates 20 completed copies of the data, and `brm_multiple()` fits the same model to each copy and pools the posteriors, so the final uncertainty reflects both the usual sampling noise and "how sure are we about the values we guessed." The outcome is deliberately excluded from `mice`'s imputation model — not just unused, structurally absent — so the same fitted model can be applied uniformly to any row, complete or not, including `test.csv` rows that never have a label at all.
 
-Two earlier Stage 2 designs didn't make the cut: a fully joint `brms` model using `mi()` for each missing predictor fit cleanly but turned out unable to predict on new rows that have their own missing values — a real, documented `brms`/Stan limitation, not a bug on our end (preserved on the git branch `checkpoint/joint-mi-stage2`). A follow-up two-model split (one model trained with the outcome available for imputation, used only on complete rows) fixed a subtler leakage problem but, once measured, only bought ~0.003 AUC over the single outcome-free model — not worth the extra complexity, so we dropped it (`src/old/compare_modelA_modelB_on_complete_rows.R` has the comparison that made that call).
+Two earlier Stage 2 designs didn't make the cut: a fully joint `brms` model using `mi()` for each missing predictor fit cleanly but turned out unable to predict on new rows that have their own missing values. A follow-up two-model split (one model trained with the outcome available for imputation, used only on complete rows) fixed a subtler leakage problem but, once measured, only bought ~0.003 AUC over the single outcome-free model which was not worth the extra complexity, so we dropped it.
 
 ## 4. Model
 
@@ -44,7 +44,7 @@ Superscript $z$ = standardized (observed-value mean/SD). `stage_fear`/`drained` 
 
 ### Priors, and a surprising coefficient
 
-Our first instinct for priors was to read a directional nudge off each predictor's marginal correlation with the target. That was a mistake here. A **prior predictive check** (`sample_prior = "only"`, fit against no real data at all) showed a median predicted probability of **0.013** against an actual base rate of **0.26** — the prior alone was already extremely overconfident, before a single row of data was involved. The bug: these 7 predictors are strongly *mutually* correlated (not just correlated with the target), so five independently-large directional nudges compounded instead of adding independent information. Fix: drop the nudging, use a single flat, weakly-informative `normal(0, 2.5)` for every coefficient — the standard Gelman default for standardized-predictor logistic regression, letting the data (n = 18,524) do all the work. Re-running the check gave a median of **0.2606** against the true 0.2605. Lesson: always run the check before trusting a prior, even when the choice "should" be fine on paper.
+Defining directional priors would have been a challenge, specially because many of the predictors were strongly correlated to each other. Because of this we use a single flat, weakly-informative `normal(0, 2.5)` for every coefficient, letting the data (n = 18,524) do all the work. The **prior predictive check** gave a median of **0.2606** against the true 0.2605, validating our prior defintion.
 
 The `stage_fear_bin`/`drained_after_socializing_bin` coefficients also turned out bigger than expected — odds ratios in the teens-to-thirties, vs. Stage 1's 6.4/12.7 for the same variables. Our first guess was that this was an artifact of imputing with the outcome available (the abandoned "Model A" design mentioned in Approach, above). It wasn't, or at least not mostly: only ~10%/6% of these two columns are missing at all, so *both* models are fit predominantly on the ~90% of rows where they're genuinely observed — and a raw, imputation-independent 2×2 table on just the observed rows already shows an odds ratio around **670**. The size of the coefficient is mostly intrinsic to how strongly these two questions actually predict introversion in this (synthetic) dataset, not a modeling artifact. Because the pair is so collinear (r = 0.995), we report their **posterior sum** as the more stable quantity — Stage 2: 5.58 log-odds [5.09, 6.09], vs. Stage 1's 4.39 [4.03, 4.76].
 

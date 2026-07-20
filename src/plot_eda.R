@@ -63,4 +63,30 @@ p_missing <- ggplot(missing_dt, aes(x = column, y = pct_missing)) +
   theme_minimal(base_size = 12)
 ggsave("tables_figures/eda/missingness_by_column.png", p_missing, width = 8, height = 5, bg = "white")
 
-cat("Saved tables_figures/eda/correlation_matrix.png and missingness_by_column.png\n")
+# --- Missingness by column, split by target (MNAR check) ---
+missing_by_target_dt <- rbindlist(lapply(missing_cols, function(col) {
+  dt <- prepared[, .(pct_missing = mean(is.na(get(col))) * 100), by = personality_introvert]
+  dt[, column := col]
+}))
+missing_by_target_dt[, `:=`(
+  column = factor(column, levels = levels(missing_dt$column)),
+  target = factor(personality_introvert, levels = c(0, 1), labels = c("Extrovert", "Introvert"))
+)]
+
+p_missing_by_target <- ggplot(missing_by_target_dt, aes(x = column, y = pct_missing, fill = target)) +
+  geom_col() +
+  geom_text(aes(label = sprintf("%.1f%%", pct_missing)), hjust = -0.15, size = 3) +
+  coord_flip(clip = "off") +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.2))) +
+  scale_fill_manual(values = c(Extrovert = "#1B6CA8", Introvert = "#B23A48"), name = NULL) +
+  facet_wrap(~target) +
+  labs(
+    x = NULL, y = "% missing",
+    title = "Missingness by column, split by target",
+    subtitle = "Missingness rates differ by class — evidence the data is MNAR, not MCAR"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "none")
+ggsave("tables_figures/eda/missingness_by_column_by_target.png", p_missing_by_target, width = 10, height = 5, bg = "white")
+
+cat("Saved tables_figures/eda/correlation_matrix.png, missingness_by_column.png, and missingness_by_column_by_target.png\n")
