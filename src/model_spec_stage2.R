@@ -11,7 +11,7 @@ stage2_family <- function() {
   bernoulli(link = "logit")
 }
 
-# Same priors as the current/revised stage1_priors(): Stage 1 and Stage 2 encode the same
+# Same priors as the retired baseline model's stage1_priors() (src/old/): both encoded the same
 # beliefs about the personality model. See design spec "Priors" section for full rationale.
 stage2_priors <- function() {
   c(
