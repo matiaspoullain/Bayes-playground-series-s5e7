@@ -62,3 +62,41 @@ p_dag <- ggdag(dag, text = FALSE, use_labels = "label") +
 ggsave("tables_figures/stage1_dag/dag.png", p_dag, width = 11, height = 8, bg = "white")
 
 cat("Saved tables_figures/stage1_dag/dag.png\n")
+
+# --- Coefficient-shift checks (spec "Method: coefficient-shift comparison, not p-values") ---
+all_predictors <- c(
+  "time_spent_alone_z", "social_event_attendance_z", "going_outside_z",
+  "friends_circle_size_z", "post_frequency_z", "stage_fear_bin",
+  "drained_after_socializing_bin"
+)
+
+# 3 DAG-motivated checks (spec "The DAG" / "Method", checks 1-3)
+dag_checks <- rbindlist(list(
+  coefficient_shift_check(prepared, "stage_fear_bin", "drained_after_socializing_bin"),
+  coefficient_shift_check(prepared, "drained_after_socializing_bin", "stage_fear_bin"),
+  coefficient_shift_check(
+    prepared, "social_event_attendance_z",
+    c("stage_fear_bin", "drained_after_socializing_bin")
+  ),
+  coefficient_shift_check(prepared, "friends_circle_size_z", "social_event_attendance_z")
+))
+dag_checks[, check := "dag_motivated"]
+
+# General screen: each predictor's bivariate coefficient vs. its coefficient
+# in the full 7-predictor model -- supporting context, not a primary
+# decision (spec "Method", "General screen").
+general_screen <- rbindlist(lapply(all_predictors, function(p) {
+  others <- setdiff(all_predictors, p)
+  coefficient_shift_check(prepared, predictor = p, conditioning_vars = others)
+}))
+general_screen[, check := "general_screen"]
+
+results <- rbind(dag_checks, general_screen)
+fwrite(results, "tables_figures/stage1_dag/coefficient_shift_checks.csv")
+
+cat("\n--- DAG-motivated coefficient-shift checks ---\n")
+print(dag_checks[, .(predictor, conditioning_vars, coef_alone, coef_conditioned, retained_pct, call)])
+cat("\n--- General screen: bivariate vs. full 7-predictor model ---\n")
+print(general_screen[, .(predictor, coef_alone, coef_conditioned, retained_pct, call)])
+
+cat("\nSaved tables_figures/stage1_dag/coefficient_shift_checks.csv\n")
