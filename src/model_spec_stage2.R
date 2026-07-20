@@ -2,7 +2,7 @@ library(brms)
 
 stage2_formula <- function() {
   bf(
-    personality_introvert ~ 1 + time_spent_alone_z + social_event_attendance_z + going_outside_z +
+    personality_introvert ~ 1 + time_spent_alone_z + going_outside_z +
       friends_circle_size_z + post_frequency_z + stage_fear_bin + drained_after_socializing_bin
   )
 }
