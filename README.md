@@ -26,13 +26,15 @@ Missingness is spread across every column (5.7%–10.2% each), and it isn't rand
 
 ## 3. Approach
 
-We built this in two stages: a simple baseline, then a version that actually propagates imputation uncertainty.
+We built this in two stages: a causal analysis that decides which predictors belong in the model, then the model itself.
 
-**Stage 1** is a single Bayesian logistic regression (`brms`, `bernoulli(link="logit")`) with median/mode point imputation plus 7 `was_missing_*` indicator variables, one per predictor, flagging whether that row originally had a gap there.
+**Stage 1** treats `Personality` as a latent trait and the 7 behavioral columns as its effects, not its causes — an introvert *tends to* spend more time alone, not the reverse. We drew an explicit causal DAG on that basis and tested it: for each plausible behavior-to-behavior edge (e.g. does `friends_circle_size` carry signal about `Personality` beyond what `social_event_attendance` already captures, or is it fully mediated?), we compared a predictor's `glm()` coefficient with and without the candidate conditioning variable — by effect size, not p-value, since these predictors are collinear enough that p-values are a poor guide to what's actually redundant. Full DAG, method, and decision rule: `docs/superpowers/specs/Bayes-playground-series-s5e7/2026-07-20-causal-dag-variable-selection-design.md` (parent repo).
 
-**Stage 2** replaces point imputation with proper multiple imputation: `mice` generates 20 completed copies of the data, and `brm_multiple()` fits the same model to each copy and pools the posteriors, so the final uncertainty reflects both the usual sampling noise and "how sure are we about the values we guessed." The outcome is deliberately excluded from `mice`'s imputation model — not just unused, structurally absent — so the same fitted model can be applied uniformly to any row, complete or not, including `test.csv` rows that never have a label at all.
+![Causal DAG](tables_figures/stage1_dag/dag.png)
 
-Two earlier Stage 2 designs didn't make the cut: a fully joint `brms` model using `mi()` for each missing predictor fit cleanly but turned out unable to predict on new rows that have their own missing values. A follow-up two-model split (one model trained with the outcome available for imputation, used only on complete rows) fixed a subtler leakage problem but, once measured, only bought ~0.003 AUC over the single outcome-free model which was not worth the extra complexity, so we dropped it.
+**Stage 2** is a Bayesian logistic regression (`brms`, `bernoulli(link="logit")`) on Stage 1's selected predictors, fit with proper multiple imputation: `mice` generates 20 completed copies of the data, and `brm_multiple()` fits the same model to each copy and pools the posteriors, so the final uncertainty reflects both the usual sampling noise and "how sure are we about the values we guessed." The outcome is deliberately excluded from `mice`'s imputation model — not just unused, structurally absent — so the same fitted model can be applied uniformly to any row, complete or not, including `test.csv` rows that never have a label at all.
+
+Two earlier Stage 2 designs didn't make the cut: a fully joint `brms` model using `mi()` for each missing predictor fit cleanly but turned out unable to predict on new rows that have their own missing values. A follow-up two-model split (one model trained with the outcome available for imputation, used only on complete rows) fixed a subtler leakage problem but, once measured, only bought ~0.003 AUC over the single outcome-free model, which was not worth the extra complexity, so we dropped it.
 
 ## 4. Model
 
@@ -40,26 +42,40 @@ $$\text{personality\_introvert}_i \sim \text{Bernoulli}(p_i)$$
 
 $$\text{logit}(p_i) = \beta_0 + \beta_1 \, \text{time\_alone}_i^z + \beta_2 \, \text{social\_event}_i^z + \beta_3 \, \text{going\_out}_i^z + \beta_4 \, \text{friends}_i^z + \beta_5 \, \text{posts}_i^z + \beta_6 \, \text{stage\_fear}_i + \beta_7 \, \text{drained}_i$$
 
-Superscript $z$ = standardized (observed-value mean/SD). `stage_fear`/`drained` are already 0/1, not standardized. Same formula shape in both stages; Stage 1 additionally carries 7 `was_missing_*` indicator terms that Stage 2 doesn't need (it's genuinely imputed, not point-imputed-and-flagged).
+Superscript $z$ = standardized (observed-value mean/SD). `stage_fear`/`drained` are already 0/1, not standardized. This is Stage 2's formula — Stage 2 is the only fitted predictive model now; Stage 1 doesn't fit anything, it decides which of these terms belong here in the first place (see "Approach" above).
 
 ### Priors, and a surprising coefficient
 
 Defining directional priors would have been a challenge, specially because many of the predictors were strongly correlated to each other. Because of this we use a single flat, weakly-informative `normal(0, 2.5)` for every coefficient, letting the data (n = 18,524) do all the work. The **prior predictive check** gave a median of **0.2606** against the true 0.2605, validating our prior defintion.
 
-The `stage_fear_bin`/`drained_after_socializing_bin` coefficients also turned out bigger than expected — odds ratios in the teens-to-thirties, vs. Stage 1's 6.4/12.7 for the same variables. Our first guess was that this was an artifact of imputing with the outcome available (the abandoned "Model A" design mentioned in Approach, above). It wasn't, or at least not mostly: only ~10%/6% of these two columns are missing at all, so *both* models are fit predominantly on the ~90% of rows where they're genuinely observed — and a raw, imputation-independent 2×2 table on just the observed rows already shows an odds ratio around **670**. The size of the coefficient is mostly intrinsic to how strongly these two questions actually predict introversion in this (synthetic) dataset, not a modeling artifact. Because the pair is so collinear (r = 0.995), we report their **posterior sum** as the more stable quantity — Stage 2: 5.58 log-odds [5.09, 6.09], vs. Stage 1's 4.39 [4.03, 4.76].
+The `stage_fear_bin`/`drained_after_socializing_bin` coefficients turned out bigger than a naive collinearity story would predict. Part of the explanation is structural: `social_event_attendance` is a **collider** in Stage 1's DAG (it has three parents — `Personality`, `stage_fear_bin`, `drained_after_socializing_bin`), and including a collider as a covariate alongside its co-parents can inflate the estimated association between those co-parents and the outcome beyond their true shared-cause relationship. This is a real caveat for interpreting `stage_fear_bin`/`drained_after_socializing_bin`'s coefficients *causally* — it is not a reason to drop `social_event_attendance`, since a collider is still legitimate, useful information for *prediction* (this is exactly how a diagnostic model works: conditioning on downstream test results improves diagnosis even though the results aren't causes of the underlying condition). Separately: only ~10%/6% of these two columns are missing at all, so both models are fit predominantly on the ~90% of rows where they're genuinely observed — and a raw, imputation-independent 2×2 table on just the observed rows already shows an odds ratio around **670**. Because the pair is so collinear (r = 0.995), we report their **posterior sum** as the more stable quantity — Stage 2: 5.58 log-odds [5.09, 6.09], vs. Stage 1's 4.39 [4.03, 4.76].
+
+### Stage 1 findings: which predictors survive the DAG check
+
+The DAG-motivated checks target specific edges the causal graph predicts:
+
+- `stage_fear_bin`'s coefficient retains 56.3% of its bivariate magnitude when `drained_after_socializing_bin` is added as a conditioning variable (**keep**) — consistent with the DAG's prediction that they're parallel effects of `Personality`, not mediators of each other.
+- Symmetrically, `drained_after_socializing_bin`'s coefficient retains 43.1% of its bivariate magnitude when conditioned on `stage_fear_bin` (**keep**) — same story from the other direction.
+- `social_event_attendance_z`'s coefficient retains only 6.6% of its bivariate magnitude once conditioned on `stage_fear_bin` and `drained_after_socializing_bin` together (**drop candidate**) — its raw association with `Personality` (odds ratio 0.034 alone) collapses to near-null (odds ratio 0.80 conditioned), matching the DAG's mediation edge: `social_event_attendance` doesn't carry signal about `Personality` beyond what those two already capture.
+- `friends_circle_size_z`'s coefficient retains 51.1% of its bivariate magnitude when conditioned on `social_event_attendance_z` alone (**keep**) — it survives this targeted check, so its own DAG-relevant conditioning doesn't explain it away.
+
+A separate, blunter **general screen** conditions each of the 7 predictors on all 6 others simultaneously (7 rows, `check == "general_screen"` in the CSV). There, 5 of 7 predictors — including `friends_circle_size_z` (down to 5.0% retained, odds ratio 0.048 alone vs. 0.86 conditioned) — come out as drop candidates, because `stage_fear_bin` and `drained_after_socializing_bin` are so dominant (raw bivariate odds ratios around 670 each) that they swamp everyone else's marginal contribution once all 7 compete at once. This is "dominant predictor" crowding-out, not mediation, and it's exactly why the design spec treats the general screen as supporting context rather than the primary decision: `friends_circle_size_z` genuinely disagrees between the two check types — "keep" against the one variable the DAG says it should be checked against, "drop candidate" against a screen that also includes two variables an order of magnitude stronger than it. We trust the targeted DAG check here and keep it.
+
+**Overall outcome:** `social_event_attendance_z` is the one predictor the DAG-motivated checks flag as a drop candidate; the other 6 (`time_spent_alone_z`, `going_outside_z`, `friends_circle_size_z`, `post_frequency_z`, `stage_fear_bin`, `drained_after_socializing_bin`) are kept. Re-fitting Stage 2 with this reduced 6-predictor set is a follow-up, not done here — Stage 2 below still uses all 7 predictors, as it did before this analysis.
+
+Full results, including the general 7-predictor screen: `tables_figures/stage1_dag/coefficient_shift_checks.csv`.
 
 ## 5. Results
 
 ### Cross-validated performance
 
-Both stages land in a near-ceiling accuracy band (~0.969) where accuracy alone can't really tell them apart — this competition's own leaderboard reportedly comes down to "about 10 data points." AUC, which uses the full probability ranking instead of a hard threshold, does separate them:
+Stage 2 (the only fitted predictive model now — see "Approach" above) lands in a near-ceiling accuracy band (~0.969), where this competition's own leaderboard reportedly comes down to "about 10 data points":
 
 | | Folds | Pooled accuracy | Pooled AUC | Pooled Brier | Max R-hat | Min ESS |
 |---|---|---|---|---|---|---|
-| **Stage 1** | 10 | 0.9690 | 0.9592 | 0.0302 | 1.0060 | 1150 |
-| **Stage 2** | 5 | 0.9690 | **0.9611** | 0.0296 | 1.0060 | 1149 |
+| **Stage 2** | 5 | 0.9690 | 0.9611 | 0.0296 | 1.0060 | 1149 |
 
-Stage 2's fold count is lower than Stage 1's (5 vs. 10, `m=5` imputations vs. Stage 1 needing none) purely as a compute compromise — CV is for sanity-checking and this comparison, not the final inference. The pooled figures (computed on the full concatenated out-of-fold predictions, independent of fold count) are what should be compared. `brm_multiple()` fits (Stage 2) can't use a combined R-hat the way a normal `brmsfit` can — it's checked per-imputation instead (`posterior::as_draws_array()` + `subset_draws()`), and the worst value across all 20 imputations is what's reported above.
+`brm_multiple()` fits can't use a combined R-hat the way a normal `brmsfit` can — it's checked per-imputation instead (`posterior::as_draws_array()` + `subset_draws()`), and the worst value across all 20 imputations is what's reported above.
 
 ### Leaderboard
 
@@ -75,15 +91,9 @@ The competition is scored on plain **Accuracy** (`sample_submission.csv` format:
 
 ### Odds ratios
 
-Stage 1:
-
-![Stage 1 odds ratios](tables_figures/stage1_report/odds_ratios_forest_plot.png)
-
-Stage 2:
-
 ![Stage 2 odds ratios](tables_figures/stage2_report/odds_ratios_forest_plot.png)
 
-`stage_fear_bin` and `drained_after_socializing_bin` dominate both models by a wide margin — no surprise given the ~0.91 raw correlation with the target. `time_spent_alone` is the strongest of the 5 count-like predictors in both stages; a couple of the weaker ones (`going_outside`, `friends_circle_size`) have credible intervals crossing 1 in Stage 2, an honest "no clearly detectable effect net of everything else" result rather than something to hide.
+`stage_fear_bin` and `drained_after_socializing_bin` dominate by a wide margin — no surprise given the ~0.91 raw correlation with the target, and confirmed by Stage 1's coefficient-shift checks to carry independent signal rather than redundancy. `time_spent_alone` is the strongest of the 5 count-like predictors; a couple of the weaker ones (`going_outside`, `friends_circle_size`) have credible intervals crossing 1, an honest "no clearly detectable effect net of everything else" result rather than something to hide.
 
 ### Calibration
 
@@ -107,17 +117,15 @@ Pooled across all 20 imputations (not just the first, which is what `brms`'s own
 
 - `src/features.R` — shared feature engineering: `read_competition_csv()` (fixes a real `fread()`/`read.csv()` gotcha — blank fields in character columns read as `""`, not `NA`, unless told otherwise), `recode_personality()`, `prepare_stage1_data()`, `prepare_stage2_data()`, standardization/imputation helpers, stratified folds
 - `src/metrics.R` — hand-written accuracy/AUC/Brier score (no new dependency)
-- `src/model_spec_stage1.R`, `src/model_spec_stage2.R` — formula, family, priors (single source of truth per stage)
-- `src/prior_predictive_check_stage1.R` — the check that caught the compounding-prior bug
-- `src/fit_stage1_cv.R`, `src/fit_stage1_full.R` — Stage 1 cross-validation and final fit
+- `src/stage1_dag_analysis.R` — the new Stage 1: defines and plots the causal DAG (`ggdag`), runs the `glm()`-based coefficient-shift checks that decide which predictors Stage 2 uses
+- `src/model_spec_stage2.R` — formula, family, priors (single source of truth)
 - `src/fit_stage2_full.R`, `src/fit_stage2_cv.R` — Stage 2 (`mice` + `brm_multiple()`) final fit and cross-validation
-- `src/report_stage1_inference.R`, `src/report_stage2_inference.R` — posterior odds ratios + forest plots
-- `src/check_calibration_stage1.R`, `src/check_calibration_stage2.R` — reliability diagrams
-- `src/check_diagnostics_stage1.R`, `src/check_diagnostics_stage2.R` — Rhat/ESS/`pp_check`
-- `src/compare_stages.R` — Stage 1 vs. Stage 2 accuracy/AUC comparison
+- `src/report_stage2_inference.R` — posterior odds ratios + forest plot
+- `src/check_calibration_stage2.R` — reliability diagram
+- `src/check_diagnostics_stage2.R` — Rhat/ESS/`pp_check`
 - `src/generate_submission.R` — imputes `test.csv` the same outcome-free way as training and writes `data/processed/submission_stage2.csv`
 - `src/submit_to_kaggle.py` — submits that file via the `kaggle` package's `KaggleApi` and prints back the scored result
 - `src/plot_eda.R` — the two exploratory figures at the top of this README
-- `src/old/` — retired code kept only as a decision record, not part of the active pipeline (e.g. `compare_modelA_modelB_on_complete_rows.R`, the AUC check that led to dropping Model A)
+- `src/old/` — retired code kept only as a decision record, not part of the active pipeline (e.g. `compare_modelA_modelB_on_complete_rows.R`, the AUC check that led to dropping Model A; the original Stage 1 baseline model and its `compare_stages.R` comparison, superseded 2026-07-20 by the causal DAG analysis)
 - `tables_figures/` — all figures and summary tables referenced above
 - `checkpoint/joint-mi-stage2` (git branch, not a folder) — the fully-built, fully-fit joint-`mi()` design that predated the `mice`/`brm_multiple()` approach, kept for reference
