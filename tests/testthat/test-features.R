@@ -161,3 +161,49 @@ test_that("read_competition_csv reads a blank field in a character column as NA"
   expect_true(is.na(result$Stage_fear[2]))
   expect_equal(result$Stage_fear, c("Yes", NA))
 })
+
+test_that("coefficient_shift_check flags a predictor as a drop candidate when its bivariate association is fully explained by the conditioning variable", {
+  set.seed(1)
+  n <- 3000
+  x <- rnorm(n)
+  personality_introvert <- rbinom(n, 1, plogis(2 * x))
+  # z is caused by x, not by personality_introvert -- any bivariate association
+  # between z and personality_introvert is spurious, induced entirely through x
+  z <- x + rnorm(n, sd = 0.2)
+  dt <- data.table(personality_introvert = personality_introvert, x = x, z = z)
+
+  result <- coefficient_shift_check(dt, predictor = "z", conditioning_vars = "x")
+
+  expect_equal(result$call, "drop candidate")
+  expect_true(result$retained_pct < 20)
+})
+
+test_that("coefficient_shift_check keeps a predictor whose signal survives conditioning", {
+  set.seed(2)
+  n <- 3000
+  x <- rnorm(n)
+  w <- rnorm(n)
+  # w drives personality_introvert independently of x -- its association should
+  # survive conditioning on x, unlike the spurious z case above
+  personality_introvert <- rbinom(n, 1, plogis(1.5 * x + 1.5 * w))
+  dt <- data.table(personality_introvert = personality_introvert, x = x, w = w)
+
+  result <- coefficient_shift_check(dt, predictor = "w", conditioning_vars = "x")
+
+  expect_equal(result$call, "keep")
+  expect_true(result$retained_pct > 50)
+})
+
+test_that("coefficient_shift_check accepts multiple conditioning variables", {
+  set.seed(3)
+  n <- 3000
+  a <- rnorm(n)
+  b <- rnorm(n)
+  personality_introvert <- rbinom(n, 1, plogis(1.5 * a + 1.5 * b))
+  dt <- data.table(personality_introvert = personality_introvert, a = a, b = b)
+
+  result <- coefficient_shift_check(dt, predictor = "a", conditioning_vars = c("b"))
+
+  expect_equal(nrow(result), 1)
+  expect_equal(result$conditioning_vars, "b")
+})

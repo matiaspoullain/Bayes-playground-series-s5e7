@@ -199,3 +199,55 @@ prepare_stage2_data <- function(df) {
 read_competition_csv <- function(path) {
   fread(path, na.strings = c("NA", ""))
 }
+
+#' Compare a predictor's glm coefficient magnitude with vs. without a conditioning variable
+#'
+#' Fits `personality_introvert ~ predictor` and
+#' `personality_introvert ~ predictor + conditioning_vars` (both
+#' `family = binomial`, complete cases per model via `glm()`'s default
+#' `na.action`), and reports how much `predictor`'s own coefficient shifts
+#' between the two. This is an effect-size-based test (retained coefficient
+#' magnitude / odds-ratio distance from 1), not a p-value threshold -- see
+#' the design spec's "Method: coefficient-shift comparison, not p-values".
+#' A predictor is a "drop candidate" if its coefficient falls to <=20% of
+#' its unconditioned magnitude, or its conditioned odds ratio lands within
+#' +-10% of 1 (practically no association once the conditioning variable is
+#' known); otherwise it's "keep".
+#'
+#' @param data data.table containing `personality_introvert`, `predictor`,
+#'   and every column named in `conditioning_vars`
+#' @param predictor character, name of the predictor whose coefficient is tracked
+#' @param conditioning_vars character vector, name(s) of the variable(s)
+#'   added in the conditioned model
+#'
+#' @return one-row data.table: `predictor`, `conditioning_vars`
+#'   (comma-joined), `coef_alone`, `coef_conditioned`, `retained_pct`,
+#'   `or_alone`, `or_conditioned`, `call` (`"keep"` or `"drop candidate"`)
+coefficient_shift_check <- function(data, predictor, conditioning_vars) {
+  f_alone <- as.formula(paste("personality_introvert ~", predictor))
+  f_full <- as.formula(paste(
+    "personality_introvert ~",
+    paste(c(predictor, conditioning_vars), collapse = " + ")
+  ))
+
+  fit_alone <- glm(f_alone, data = data, family = binomial)
+  fit_full <- glm(f_full, data = data, family = binomial)
+
+  coef_alone <- unname(coef(fit_alone)[predictor])
+  coef_conditioned <- unname(coef(fit_full)[predictor])
+  retained_pct <- 100 * abs(coef_conditioned) / abs(coef_alone)
+  or_conditioned <- exp(coef_conditioned)
+
+  call <- if (retained_pct <= 20 || abs(or_conditioned - 1) <= 0.10) "drop candidate" else "keep"
+
+  data.table(
+    predictor = predictor,
+    conditioning_vars = paste(conditioning_vars, collapse = ", "),
+    coef_alone = coef_alone,
+    coef_conditioned = coef_conditioned,
+    retained_pct = retained_pct,
+    or_alone = exp(coef_alone),
+    or_conditioned = or_conditioned,
+    call = call
+  )
+}
