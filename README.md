@@ -28,9 +28,23 @@ Missingness is spread across every column (5.7%–10.2% each), and it isn't rand
 
 We built this in two stages: a causal analysis that decides which predictors belong in the model, then the model itself.
 
-**Stage 1** treats `Personality` as a latent trait and the 7 behavioral columns as its effects, not its causes — an introvert *tends to* spend more time alone, not the reverse. We drew an explicit causal DAG on that basis and tested it: for each plausible behavior-to-behavior edge (e.g. does `friends_circle_size` carry signal about `Personality` beyond what `social_event_attendance` already captures, or is it fully mediated?), we compared a predictor's `glm()` coefficient with and without the candidate conditioning variable — by effect size, not p-value, since these predictors are collinear enough that p-values are a poor guide to what's actually redundant. Full DAG, method, and decision rule: `docs/superpowers/specs/Bayes-playground-series-s5e7/2026-07-20-causal-dag-variable-selection-design.md` (parent repo).
+**Stage 1** treats `Personality` as a latent trait and the 7 behavioral columns as its effects, not its causes — an introvert *tends to* spend more time alone, not the reverse. We drew an explicit causal DAG on that basis and tested it: for each plausible behavior-to-behavior edge (e.g. does `friends_circle_size` carry signal about `Personality` beyond what `social_event_attendance` already captures, or is it fully mediated?), we compared a predictor's `glm()` coefficient with and without the candidate conditioning variable — by effect size, not p-value, since these predictors are collinear enough that p-values are a poor guide to what's actually redundant.
 
-![Causal DAG](tables_figures/stage1_dag/dag.png)
+```mermaid
+graph TD
+    Personality --> time_spent_alone
+    Personality --> stage_fear
+    Personality --> drained_after_socializing
+    Personality --> going_outside
+    Personality --> post_frequency
+    Personality --> social_event_attendance
+    Personality --> friends_circle_size
+    stage_fear --> social_event_attendance
+    drained_after_socializing --> social_event_attendance
+    social_event_attendance --> friends_circle_size
+```
+
+*`social_event_attendance` and `friends_circle_size` are colliders (multiple parents) — see the collider caveat below.*
 
 **Stage 2** is a Bayesian logistic regression (`brms`, `bernoulli(link="logit")`) on all 7 predictors, fit with proper multiple imputation (re-fitting on Stage 1's recommended subset is a follow-up, not done yet — see "Stage 1 findings" below): `mice` generates 20 completed copies of the data, and `brm_multiple()` fits the same model to each copy and pools the posteriors, so the final uncertainty reflects both the usual sampling noise and "how sure are we about the values we guessed." The outcome is deliberately excluded from `mice`'s imputation model — not just unused, structurally absent — so the same fitted model can be applied uniformly to any row, complete or not, including `test.csv` rows that never have a label at all.
 
@@ -107,11 +121,6 @@ The two extreme bins — where the bulk of the data actually lives, since this p
 
 Pooled across all 20 imputations (not just the first, which is what `brms`'s own `pp_check()` silently does by default on a `brm_multiple` object unless you pass explicit `newdata` — another thing we had to catch and fix manually). Simulated 0/1 proportions match the observed split closely.
 
-## 6. What we'd do differently
-
-- **Run the prior predictive check before, not after, assuming a prior is fine "because it worked on the last project."** The compounding failure above cost real iteration time.
-- **Think about what information a real test row will and won't have, from the start**, rather than discovering a CV-time leakage issue after a full whole-branch review. The `mice(ignore=)` mistake wasn't a bug in the narrow sense — the code did what it was told — it just wasn't told the right thing.
-- **Check whether an added layer of complexity earns its keep before committing to it**, not after. The two-model split was principled and worked, but a five-minute AUC comparison would have shown its actual value (~0.003 AUC) earlier.
 
 ## Repository layout
 
