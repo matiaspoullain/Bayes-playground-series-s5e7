@@ -20,12 +20,14 @@ def main():
         time.sleep(5)
         submissions = api.competition_submissions(COMPETITION)
         latest = submissions[0]
-        if latest.status == "complete":
+        status_str = str(latest.status).lower()
+        if "complete" in status_str:
             print(f"\nPublic score: {latest.public_score}")
+            print(f"Private score: {latest.private_score}")
             print(f"Status: {latest.status}")
             print(f"Message: {latest.description}")
             return
-        if latest.status == "error":
+        if "error" in status_str:
             print(f"\nSubmission errored: {latest.error_description}", file=sys.stderr)
             sys.exit(1)
 
