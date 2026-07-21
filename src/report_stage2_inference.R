@@ -16,11 +16,11 @@ dir.create("tables_figures/stage2_report", showWarnings = FALSE, recursive = TRU
 # Same two-width interval style as report_stage1_inference.R (thick bar = 50% CrI,
 # thin line = 95% CrI, dot = median) -- see that script for the rationale.
 #
-# Drops the 7 was_missing_* indicators Stage 1 carried -- Stage 2 is fit on
-# mice-imputed data, so there's no missingness left to flag; the remaining 7
-# substantive predictors are modeled the same way in both stages.
+# 6 predictors -- social_event_attendance_z dropped per Stage 1's DAG-motivated
+# coefficient-shift check (fully explained by stage_fear_bin +
+# drained_after_socializing_bin; see README.md "Stage 1 findings").
 fixef_terms <- c(
-  "time_spent_alone_z", "social_event_attendance_z", "going_outside_z",
+  "time_spent_alone_z", "going_outside_z",
   "friends_circle_size_z", "post_frequency_z", "stage_fear_bin",
   "drained_after_socializing_bin"
 )
