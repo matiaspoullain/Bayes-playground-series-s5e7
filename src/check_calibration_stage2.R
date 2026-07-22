@@ -32,35 +32,33 @@ cat(sprintf(
   calibration_summary$accuracy, calibration_summary$auc
 ))
 
-# Grouped bars (predicted vs. observed per bin) -- same style as
-# check_calibration_stage1.R, see that script for the rationale.
-reliability_long <- melt(
-  reliability, id.vars = c("bin", "n"),
-  measure.vars = c("mean_predicted", "observed_rate"),
-  variable.name = "quantity", value.name = "rate"
-)
-reliability_long[, quantity := factor(
-  quantity,
-  levels = c("mean_predicted", "observed_rate"),
-  labels = c("Mean predicted", "Observed")
-)]
-bin_labels <- reliability[, sprintf("[%.1f, %.1f)", (bin - 1) / 10, bin / 10)]
-n_labels <- reliability[, .(bin, n, y = pmax(mean_predicted, observed_rate) + 0.03)]
-
-ggplot(reliability_long, aes(x = factor(bin), y = rate, fill = quantity)) +
-  geom_col(position = position_dodge(width = 0.75), width = 0.7) +
-  geom_text(
-    data = n_labels, aes(x = factor(bin), y = y, label = paste0("n=", n)),
-    inherit.aes = FALSE, size = 2.8, colour = "grey30"
-  ) +
-  scale_x_discrete(labels = bin_labels) +
-  scale_y_continuous(breaks = seq(0, 1, by = 0.1), limits = c(0, 1.05), expand = c(0, 0)) +
-  scale_fill_manual(values = c("Mean predicted" = "#4C72B0", "Observed" = "#B23A48"), name = NULL) +
+# Diagonal reliability curve -- same idiom as Bayes-playground-series-s5e3's
+# check_calibration.R (mean predicted vs. observed rate per bin, open circles
+# connected by a line, dashed y = x reference), with point size added to
+# encode each bin's N so the sparser middle bins read as visibly less certain
+# than the two dense extreme bins.
+ggplot(reliability, aes(x = mean_predicted, y = observed_rate)) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", colour = "grey45", linewidth = 0.5) +
+  geom_line(colour = "#2A4D77", linewidth = 0.8) +
+  geom_point(aes(size = n), colour = "#2A4D77", fill = "white", shape = 21, stroke = 1.2) +
+  geom_text(aes(label = paste0("n=", n)), vjust = -2.6, size = 2.9, colour = "grey30") +
+  scale_size_continuous(range = c(3, 14), guide = "none") +
+  coord_cartesian(xlim = c(0, 1), ylim = c(-0.03, 1.08)) +
+  scale_x_continuous(breaks = seq(0, 1, by = 0.1)) +
+  scale_y_continuous(breaks = seq(0, 1, by = 0.1)) +
   labs(
-    x = "Predicted-probability bin", y = "Rate",
-    title = "Stage 2 calibration by bin",
-    subtitle = "Out-of-fold predictions (5-fold stratified CV); bars should match within each bin if well-calibrated"
+    x = "Mean predicted probability (per 10-point-wide bin)", y = "Observed rate",
+    title = "Stage 2 reliability diagram",
+    subtitle = "Out-of-fold predictions (5-fold stratified CV), 10 equally-spaced bins; dot size = N per bin"
   ) +
-  theme_minimal(base_size = 12) +
-  theme(legend.position = "top", axis.text.x = element_text(angle = 45, hjust = 1))
-ggsave("tables_figures/stage2_calibration/reliability_diagram.png", width = 9, height = 6.5, bg = "white")
+  theme_bw(base_size = 13) +
+  theme(
+    panel.grid.minor = element_blank(),
+    panel.grid.major = element_line(colour = "grey88", linewidth = 0.3),
+    panel.border = element_rect(colour = "grey70", fill = NA, linewidth = 0.6),
+    plot.title = element_text(face = "bold", size = rel(1.15), colour = "grey10", margin = margin(b = 6)),
+    plot.subtitle = element_text(colour = "grey35", margin = margin(b = 10)),
+    axis.title = element_text(face = "bold", colour = "grey20"),
+    axis.text = element_text(colour = "grey30")
+  )
+ggsave("tables_figures/stage2_calibration/reliability_diagram.png", width = 8, height = 7.5, bg = "white")

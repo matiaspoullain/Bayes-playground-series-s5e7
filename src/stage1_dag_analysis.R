@@ -82,6 +82,54 @@ dag_checks <- rbindlist(list(
 ))
 dag_checks[, check := "dag_motivated"]
 
+# --- Figure: % of bivariate coefficient retained after conditioning, per
+# DAG-motivated check, against the 20% decision threshold. This single number
+# (retained_pct) is what actually drives every "keep"/"drop candidate" call
+# among the 4 checks above (see coefficient_shift_check()'s decision rule) --
+# the general_screen rows are supporting context, not part of this figure.
+#
+#' Bar chart of retained_pct per DAG-motivated coefficient-shift check
+#'
+#' @param dag_checks output of `coefficient_shift_check()`, one row per
+#'   DAG-motivated check, with columns `predictor`, `retained_pct`, `call`
+#' @return a ggplot object
+plot_retained_pct <- function(dag_checks) {
+  term_order <- dag_checks[order(retained_pct), predictor]
+  plot_data <- copy(dag_checks)
+  plot_data[, predictor := factor(predictor, levels = term_order)]
+
+  ggplot(plot_data, aes(y = predictor, x = retained_pct, fill = call)) +
+    geom_col(width = 0.6) +
+    geom_vline(xintercept = 20, linetype = "dashed", colour = "grey40", linewidth = 0.5) +
+    annotate(
+      "text", x = 20, y = Inf, label = "20% decision threshold",
+      colour = "grey40", size = 3.2, hjust = -0.05, vjust = 1.5
+    ) +
+    geom_text(
+      aes(label = sprintf("%.1f%%", retained_pct)),
+      hjust = -0.15, size = 3.5, colour = "grey20"
+    ) +
+    scale_fill_manual(values = c("keep" = "#2A4D77", "drop candidate" = "#C1666B")) +
+    scale_x_continuous(limits = c(0, 65), expand = expansion(mult = c(0, 0.05))) +
+    labs(
+      x = "% of bivariate coefficient retained after conditioning", y = NULL, fill = "Call",
+      title = "Stage 1: which predictors survive the DAG-motivated coefficient-shift checks",
+      subtitle = paste0(
+        "Below the 20% threshold, a predictor's association is judged\n",
+        "fully explained by the conditioning variable(s)"
+      )
+    ) +
+    theme_minimal(base_size = 12) +
+    theme(legend.position = "bottom")
+}
+
+ggsave(
+  "tables_figures/stage1_dag/retained_pct_by_predictor.png",
+  plot_retained_pct(dag_checks),
+  width = 10, height = 5.5, bg = "white"
+)
+cat("Saved tables_figures/stage1_dag/retained_pct_by_predictor.png\n")
+
 # General screen: each predictor's bivariate coefficient vs. its coefficient
 # in the full 7-predictor model -- supporting context, not a primary
 # decision (spec "Method", "General screen").

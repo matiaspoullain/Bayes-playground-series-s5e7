@@ -1,6 +1,7 @@
 library(brms)
 library(ggplot2)
 library(posterior)
+library(ggdist)
 library(data.table)
 
 # stage2_fit_full.rds is a brmsfit_multiple object (from brm_multiple() across 20
@@ -97,32 +98,43 @@ fwrite(odds_ratios, "tables_figures/stage2_report/odds_ratios_summary.csv")
 cat("\n--- Stage 2 odds-ratio table (all 7 predictors, 50%/95% CrI) ---\n")
 print(odds_ratios)
 
-#' Build a two-width interval plot (median, 50% CrI, 95% CrI) of the odds ratios
+#' Build a half-eye plot (posterior density + median, 50%/95% CrI) of the odds ratios
 #'
-#' @param odds_ratios_summary per-term median + 50%/95% CrI summary
-#'   (`summarize_odds_ratios()`), ordered by point estimate for the plot's y-axis
+#' Same `ggdist::stat_halfeye()` idiom as Bayes-playground-series-s5e3's
+#' `report_inference.R` -- the density "shadow" makes skew/multimodality in the
+#' collinear pair's posteriors visible, not just a single summary pointrange.
+#' `point_interval = "median_qi"` matches this project's existing
+#' median-not-mean convention (see `summarize_odds_ratios()` roxygen above).
+#'
+#' @param posterior_or_long per-draw long odds ratios (`odds_ratio_draws_long()`)
+#' @param odds_ratios_summary per-term median summary (`summarize_odds_ratios()`),
+#'   used only to order the y-axis by point estimate
 #' @return a ggplot object
-plot_odds_ratio_forest <- function(odds_ratios_summary) {
+plot_odds_ratio_forest <- function(posterior_or_long, odds_ratios_summary) {
   term_order <- odds_ratios_summary[order(odds_ratio), term]
-  plot_data <- copy(odds_ratios_summary)
+  plot_data <- copy(posterior_or_long)
   plot_data[, term := factor(term, levels = term_order)]
 
   ggplot(plot_data, aes(y = term, x = odds_ratio)) +
     geom_vline(xintercept = 1, linetype = "dashed", colour = "grey40", linewidth = 0.5) +
-    geom_linerange(aes(xmin = or_lower_95, xmax = or_upper_95), linewidth = 0.7, colour = "#2A4D77") +
-    geom_linerange(aes(xmin = or_lower_50, xmax = or_upper_50), linewidth = 2.6, colour = "#2A4D77") +
-    geom_point(size = 2.4, colour = "white") +
-    geom_point(size = 1.3, colour = "#2A4D77") +
+    stat_halfeye(
+      .width = c(0.5, 0.95), point_interval = "median_qi",
+      fill = "#2A4D77", slab_alpha = 0.55,
+      colour = "#1B3554", linewidth = 1.1, point_size = 2.4
+    ) +
     scale_x_log10() +
     labs(
       x = "Odds ratio (log10 scale)", y = NULL,
       title = "Stage 2 odds ratios by predictor",
-      subtitle = "Median, thick bar = 50% CrI, thin line = 95% CrI (dashed: no effect, OR = 1)"
+      subtitle = paste0(
+        "Posterior distribution, median, thick bar = 50% CrI, thin line = 95% CrI\n",
+        "(dashed line marks no effect, OR = 1)"
+      )
     ) +
     theme_minimal(base_size = 12)
 }
 
-plot_odds_ratio_forest(odds_ratios)
+plot_odds_ratio_forest(posterior_or_long, odds_ratios)
 ggsave(
   "tables_figures/stage2_report/odds_ratios_forest_plot.png",
   width = 10, height = 7, bg = "white"

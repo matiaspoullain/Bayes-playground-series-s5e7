@@ -101,14 +101,52 @@ y_rep <- do.call(rbind, y_rep_list)
 # observed outcome vector.
 y_obs <- completed_list[[1]]$personality_introvert
 
-ppc_bars(y = y_obs, yrep = y_rep) +
+# --- Figure: each category's ppc_bars() dot was itself a summary (mean) of a
+# per-draw distribution -- show that distribution directly instead, one panel
+# per category, styled after bayesplot's own pp_check(type = "stat") histogram
+# (same idiom as Bayes-playground-series-s5e3's check_diagnostics.R): a
+# histogram of the simulated statistic across draws with a vertical line for
+# the observed value, rather than a single point + tiny error bar.
+n_total <- length(y_obs)
+draws_stat <- data.table(draw = seq_len(nrow(y_rep)), proportion_1 = rowSums(y_rep) / n_total)
+draws_stat[, proportion_0 := 1 - proportion_1]
+
+draws_stat_long <- melt(
+  draws_stat, id.vars = "draw",
+  measure.vars = c("proportion_0", "proportion_1"),
+  variable.name = "category", value.name = "proportion"
+)
+draws_stat_long[, category := fifelse(category == "proportion_0", "0", "1")]
+
+obs_lines <- data.table(
+  category = c("0", "1"),
+  observed = c(mean(y_obs == 0), mean(y_obs == 1))
+)
+
+category_labels <- c(`0` = "Extrovert (0)", `1` = "Introvert (1)")
+
+ggplot(draws_stat_long, aes(x = proportion)) +
+  geom_histogram(bins = 30, fill = "#dce9f5", colour = "#2A4D77", linewidth = 0.3) +
+  geom_vline(data = obs_lines, aes(xintercept = observed), colour = "#0D3B66", linewidth = 1) +
+  facet_wrap(~category, scales = "free_x", labeller = as_labeller(category_labels)) +
   labs(
+    x = "Simulated proportion of rows in category (per draw)", y = "Count",
     title = "Stage 2 posterior predictive check",
     subtitle = paste0(
-      "Simulated 0/1 outcome proportions (", ndraws_per_imputation, " draws x ", m_value,
-      " imputations, pooled) vs. observed (y)"
-    ),
-    x = "Introvert (1) / Extrovert (0)", y = "Count"
+      "Distribution of the simulated category proportion across ", ndraws_per_imputation,
+      " draws x ", m_value, " imputations (pooled)\nvs. observed (vertical line)"
+    )
   ) +
-  theme_minimal(base_size = 12)
-ggsave("tables_figures/stage2_diagnostics/pp_check_bars.png", width = 7, height = 6, bg = "white")
+  theme_bw(base_size = 13) +
+  theme(
+    panel.grid.minor = element_blank(),
+    panel.grid.major = element_line(colour = "grey88", linewidth = 0.3),
+    panel.border = element_rect(colour = "grey70", fill = NA, linewidth = 0.6),
+    strip.background = element_rect(fill = "grey93", colour = "grey70"),
+    strip.text = element_text(face = "bold", colour = "grey20"),
+    plot.title = element_text(face = "bold", size = rel(1.15), colour = "grey10", margin = margin(b = 6)),
+    plot.subtitle = element_text(colour = "grey35", margin = margin(b = 10)),
+    axis.title = element_text(face = "bold", colour = "grey20"),
+    axis.text = element_text(colour = "grey30")
+  )
+ggsave("tables_figures/stage2_diagnostics/pp_check_bars.png", width = 10, height = 6, bg = "white")
